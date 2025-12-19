@@ -40,7 +40,7 @@ const parseCorisXML = (xmlString, tagName) => {
     return results;
 };
 
-// Extração de valor mais robusta
+// Extração de valor mais robusta (para exibição apenas, não mais para filtro)
 const extractCoverageValue = (planName) => {
     if (!planName) return 0;
     // Tenta capturar "60.000", "60K", "60 mil", "60"
@@ -119,19 +119,8 @@ exports.handler = async (event) => {
              return { statusCode: 200, body: JSON.stringify([]) };
         }
 
-        // 3. Filtragem de Planos
-        planos = planos.filter(p => {
-            const val = extractCoverageValue(p.nome);
-            
-            // SE conseguir ler o valor, aplica o filtro. SE NÃO (val=0), mostra o plano por segurança.
-            if (val > 0) {
-                // Sempre Único: 60k a 1M
-                if (origin === 'sempre_unico') return val >= 60000 && val <= 1000000;
-                // Index: Até 700k
-                if (origin === 'index') return val <= 700000;
-            }
-            return true; // Fallback: mostra tudo que não conseguiu filtrar
-        });
+        // 3. SEM FILTROS DE VALOR (Retorna TUDO que o usuário tem acesso)
+        // A filtragem anterior foi removida para exibir todos os planos disponíveis para o login.
 
         if (planos.length === 0) return { statusCode: 200, body: JSON.stringify([]) };
 
@@ -181,7 +170,7 @@ exports.handler = async (event) => {
                 const coverage = extractCoverageValue(p.nome);
                 const dmh = coverage > 0 ? `USD ${coverage.toLocaleString('pt-BR')}` : p.nome; // Fallback nome se não ler valor
                 
-                // Lógica visual de bagagem
+                // Lógica visual de bagagem (mantida apenas para exibição, sem filtrar plano)
                 let bagagem = 'USD 1.000';
                 if(coverage >= 60000) bagagem = 'USD 1.500';
                 if(coverage >= 100000) bagagem = 'USD 2.000';
