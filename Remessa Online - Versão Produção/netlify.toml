@@ -1,0 +1,15 @@
+[build]
+  # Comando "dummy" para evitar que o Netlify tente instalar dependências no root
+  command = "echo 'Site estático - Build pulado'"
+  
+  # Pasta onde ficam as funções backend (API)
+  functions = "functions"
+  
+  # Pasta onde ficam os arquivos HTML
+  publish = "."
+
+# Redirecionamento para as funções (APIs)
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200

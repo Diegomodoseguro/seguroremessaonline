@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remessa Online | Dashboard de Vendas</title>
+    <link rel="icon" href="https://cms-cdn-sae1.remessaonline.com.br/Symbol_f6fc626f38.svg">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { brand: { main: '#2244FF', dark: '#000733', light: '#F5F5F5' } } } } }
+    </script>
+    <style>
+        body { background-color: #f3f4f6; font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+        .animate-slide-in { animation: slideIn 0.3s ease-out forwards; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { createClient } = supabase;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } = window.Recharts || {};
+
+        const SUPABASE_URL = 'https://ujgnpbrreosmiujkedsa.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqZ25wYnJyZW9zbWl1amtlZHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODU3NDEsImV4cCI6MjA2NzQ2MTc0MX0.QY2xuq4lpZkI3Hi6gwRLi-0VUxuGoWS_LzfGtIJwRzE';
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const formatFirstName = (fullName) => {
+            if (!fullName) return 'Cliente';
+            const firstName = fullName.trim().split(' ')[0].toLowerCase();
+            return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+        };
+
+        const StatusBadge = ({ status }) => {
+            const config = {
+                'cotacao_iniciada': { color: 'bg-gray-100 text-gray-600', label: 'Cotação' },
+                'venda_concluida': { color: 'bg-green-100 text-green-700', label: 'Venda OK' },
+                'pagamento_falhou': { color: 'bg-red-50 text-red-700', label: 'Falha Pagto' }
+            };
+            const current = config[status] || { color: 'bg-gray-100', label: status };
+            return <span className={`px-2 py-1 rounded text-xs font-bold ${current.color}`}>{current.label}</span>;
+        };
+
+        const DetailModal = ({ lead, onClose }) => {
+            if (!lead) return null;
+            return (
+                <div className="fixed inset-0 bg-black/60 flex justify-end z-50" onClick={onClose}>
+                    <div className="bg-white w-full max-w-md h-full p-6 overflow-y-auto animate-slide-in" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold">Lead #{lead.id}</h3>
+                            <button onClick={onClose}>X</button>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="p-4 bg-gray-50 rounded">
+                                <p className="text-sm text-gray-500">Cliente</p>
+                                <p className="font-bold">{lead.nome_usuario}</p>
+                                <p className="text-xs">{lead.email_usuario}</p>
+                            </div>
+                            <div className="p-4 bg-gray-50 rounded">
+                                <p className="text-sm text-gray-500">Detalhes</p>
+                                <p>Destino: {lead.destino_cotacao}</p>
+                                <p>Passageiros: {lead.passageiros_cotacao}</p>
+                                <p>Valor: R$ {lead.valor_final_brl || '-'}</p>
+                            </div>
+                            <div className="p-4 bg-gray-900 text-gray-300 text-xs rounded font-mono overflow-auto">
+                                <p>Voucher: {lead.coris_voucher || '-'}</p>
+                                <p>Stripe: {lead.stripe_payment_intent_id || '-'}</p>
+                                <pre>{lead.passageiros_info || 'Sem dados pax'}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = () => {
+            const [leads, setLeads] = useState([]);
+            
+            useEffect(() => {
+                const fetch = async () => {
+                    const { data } = await supabaseClient.from('remessaonlinesioux_leads').select('*').order('created_at', { ascending: false });
+                    setLeads(data || []);
+                };
+                fetch();
+                const sub = supabaseClient.channel('realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'remessaonlinesioux_leads' }, fetch).subscribe();
+                return () => supabaseClient.removeChannel(sub);
+            }, []);
+
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
+            const [selectedLead, setSelectedLead] = useState(null);
+
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    <header className="bg-brand-dark text-white p-4 sticky top-0 z-10 shadow">
+                        <div className="max-w-7xl mx-auto flex justify-between items-center">
+                            <span className="font-bold">Painel Vendas</span>
+                            <span className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded">Online</span>
+                        </div>
+                    </header>
+                    <main className="max-w-7xl mx-auto p-4 space-y-6">
+                        <div className="bg-white rounded-lg shadow overflow-hidden">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-gray-50 text-gray-500"><tr><th className="p-4">Data</th><th className="p-4">Cliente</th><th className="p-4">Valor</th><th className="p-4">Status</th></tr></thead>
+                                <tbody className="divide-y">
+                                    {leads.map(lead => (
+                                        <tr key={lead.id} onClick={() => setSelectedLead(lead)} className="hover:bg-gray-50 cursor-pointer">
+                                            <td className="p-4">{new Date(lead.created_at).toLocaleDateString()}</td>
+                                            <td className="p-4 font-medium">{lead.nome_usuario}</td>
+                                            <td className="p-4">R$ {lead.valor_final_brl || '-'}</td>
+                                            <td className="p-4"><StatusBadge status={lead.status} /></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </main>
+                    {selectedLead && <DetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [auth, setAuth] = useState(false);
+            const [pwd, setPwd] = useState('');
+            if(auth) return <Dashboard />;
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-brand-dark">
+                    <form onSubmit={e => { e.preventDefault(); if(pwd==='ModoSeguro2025') setAuth(true); }} className="bg-white p-8 rounded shadow-lg">
+                        <h2 className="text-xl font-bold mb-4 text-center">Login Admin</h2>
+                        <input type="password" className="border p-2 w-full rounded mb-4" placeholder="Senha" value={pwd} onChange={e=>setPwd(e.target.value)} />
+                        <button className="bg-brand-main text-white w-full py-2 rounded">Entrar</button>
+                    </form>
+                </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
