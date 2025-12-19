@@ -5,11 +5,13 @@ const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = process.env.CORIS_LOGIN;
 const CORIS_SENHA = process.env.CORIS_SENHA;
 
-// Helper para montar XML SOAP
+// Helper: XML Formato Padrão ASMX (<key>value</key>)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, value] of Object.entries(params)) {
-        paramString += `<param name="${key}" value="${value}" />`;
+        // Garante que valores nulos sejam strings vazias
+        const val = value === null || value === undefined ? '' : value;
+        paramString += `<${key}>${val}</${key}>`;
     }
     return `<?xml version="1.0" encoding="utf-8"?>
     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -21,7 +23,6 @@ const createSoapEnvelope = (method, params) => {
     </soap:Envelope>`;
 };
 
-// Parser simplificado de XML
 const parseCorisXML = (xmlString, tagName) => {
     const results = [];
     const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'g');
@@ -29,7 +30,7 @@ const parseCorisXML = (xmlString, tagName) => {
     while ((match = regex.exec(xmlString)) !== null) {
         const content = match[1];
         const item = {};
-        const fieldRegex = /<(\w+)>([^<]+)<\/\1>/g;
+        const fieldRegex = /<(\w+)>([^<]*)<\/\1>/g; // Alterado para aceitar valores vazios
         let fieldMatch;
         while ((fieldMatch = fieldRegex.exec(content)) !== null) {
             item[fieldMatch[1]] = fieldMatch[2];
@@ -39,55 +40,57 @@ const parseCorisXML = (xmlString, tagName) => {
     return results;
 };
 
-// Extrai valor numérico da cobertura (Ex: "60.000" -> 60000)
+// Extração de valor mais robusta
 const extractCoverageValue = (planName) => {
-    let match = planName.match(/(\d{2,3})\.?(\d{3})?/); 
+    if (!planName) return 0;
+    // Tenta capturar "60.000", "60K", "60 mil", "60"
+    let match = planName.match(/(\d{1,3})[.,]?(\d{3})?(\s*k|\s*mil)?/i);
     if (match) {
-        let val = parseInt(match[0].replace('.', ''));
-        if (val < 1000) val = val * 1000; 
+        let val = parseInt(match[1].replace(/[.,]/g, ''));
+        // Se capturou decimal (ex: 60) e tem K ou é menor que 1000, multiplica
+        if (match[3] || (!match[2] && val < 1000)) val = val * 1000;
+        else if (match[2]) val = parseInt(match[1] + match[2]);
         return val;
     }
-    return 0;
+    return 0; // Se não conseguir ler, retorna 0 (para lógica de fallback)
 };
 
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
-    if (!CORIS_LOGIN || !CORIS_SENHA) return { statusCode: 500, body: JSON.stringify({ error: 'Credenciais ausentes no servidor.' }) };
+    if (!CORIS_LOGIN || !CORIS_SENHA) return { statusCode: 500, body: JSON.stringify({ error: 'Credenciais ausentes.' }) };
 
     try {
         const { destination, days, ages, tripType, origin } = JSON.parse(event.body); 
-        // origin: 'sempre_unico' ou 'index'
 
         if (!destination || !days || !ages) {
-            return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos para cotação.' }) };
+            return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos' }) };
         }
 
-        // 1. Distribuir idades nas faixas da Coris (Conforme Manual)
+        // 1. Distribuir idades nas faixas da Coris (Manual V5)
         const brackets = { pax065: 0, pax7685: 0, pax86100: 0, p2: 0 };
-        
         ages.forEach(ageStr => {
             const age = parseInt(ageStr);
             if (age <= 65) brackets.pax065++;
-            else if (age <= 70) brackets.pax7685++;
-            else if (age <= 80) brackets.pax86100++;
-            else if (age <= 85) brackets.p2++;
+            else if (age <= 70) brackets.pax7685++; // 66-70
+            else if (age <= 80) brackets.pax86100++; // 71-80
+            else if (age <= 85) brackets.p2++; // 81-85
         });
 
-        // 2. Configurar Parâmetros de Busca de Planos
-        let homeVal = '0';
-        let multiVal = '0';
-        let destVal = destination;
-        let catVal = '1'; // Default Lazer
+        // 2. Parâmetros de Busca de Planos
+        let homeVal = 0;
+        let multiVal = 0;
+        let destVal = parseInt(destination);
+        let catVal = 1; // Default Lazer
 
         if (tripType == '3') { // Multiviagem
-            homeVal = '1';
-            catVal = '3';
+            homeVal = 1;
+            catVal = 3;
         } else if (tripType == '4') { // Receptivo
-            homeVal = '22';
-            destVal = '2'; 
-            catVal = '5';
+            homeVal = 22;
+            destVal = 2; // Manual exige destino 2 para receptivo
+            catVal = 5;
         } else if (tripType == '2') { // Intercambio
-            catVal = '2';
+            catVal = 2;
         }
 
         const planosParams = {
@@ -108,19 +111,31 @@ exports.handler = async (event) => {
         const planosText = await planosRes.text();
         let planos = parseCorisXML(planosText, 'buscaPlanos');
 
-        // 3. Filtragem de Planos (Regras de Negócio Remessa)
+        // Se a API retornar erro explícito no XML
+        const erroTag = planosText.match(/<erro>(.*?)<\/erro>/);
+        if (erroTag && erroTag[1] !== '0' && planos.length === 0) {
+             console.error("Erro API Coris:", planosText);
+             // Se erro for "nenhum plano", retornamos array vazio limpo
+             return { statusCode: 200, body: JSON.stringify([]) };
+        }
+
+        // 3. Filtragem de Planos
         planos = planos.filter(p => {
             const val = extractCoverageValue(p.nome);
-            // Regra Sempre Único: 60k a 1M
-            if (origin === 'sempre_unico') return val >= 60000 && val <= 1000000;
-            // Regra Index (Geral): Até 700k
-            if (origin === 'index') return val <= 700000;
-            return true;
+            
+            // SE conseguir ler o valor, aplica o filtro. SE NÃO (val=0), mostra o plano por segurança.
+            if (val > 0) {
+                // Sempre Único: 60k a 1M
+                if (origin === 'sempre_unico') return val >= 60000 && val <= 1000000;
+                // Index: Até 700k
+                if (origin === 'index') return val <= 700000;
+            }
+            return true; // Fallback: mostra tudo que não conseguiu filtrar
         });
 
         if (planos.length === 0) return { statusCode: 200, body: JSON.stringify([]) };
 
-        // 4. Buscar Preços
+        // 4. Buscar Preços Individuais
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': CORIS_LOGIN,
@@ -128,25 +143,25 @@ exports.handler = async (event) => {
                 'idplano': p.id,
                 'dias': days,
                 'pax065': brackets.pax065,
-                'pax6675': '0',
-                'pax7685': brackets.pax7685,
+                'pax6675': 0, 
+                'pax7685': brackets.pax7685, 
                 'pax86100': brackets.pax86100,
                 'angola': 'N',
-                'furtoelet': '0',
-                'bagagens': '0',
-                'morteac': '0',
-                'mortenat': '0',
-                'cancplus': '0',
-                'cancany': '0',
+                'furtoelet': 0,
+                'bagagens': 0,
+                'morteac': 0,
+                'mortenat': 0,
+                'cancplus': 0,
+                'cancany': 0,
                 'formapagamento': '',
                 'destino': destVal,
                 'categoria': catVal,
                 'codigodesconto': '',
-                'danosmala': '0',
-                'pet': '0',
-                'p1': '0',
-                'p2': brackets.p2.toString(),
-                'p3': '0'
+                'danosmala': 0,
+                'pet': 0,
+                'p1': 0, 
+                'p2': brackets.p2, 
+                'p3': 0 
             };
 
             const precoRes = await fetch(CORIS_URL, {
@@ -159,14 +174,17 @@ exports.handler = async (event) => {
             const precoData = parseCorisXML(precoText, 'buscaPrecos')[0];
 
             if (precoData && (precoData.precoindividualrs || precoData.totalrs)) {
-                const totalBRL = parseFloat((precoData.totalrs || precoData.precoindividualrs).replace('.', '').replace(',', '.'));
-                const coverage = extractCoverageValue(p.nome);
-                const dmh = `USD ${coverage.toLocaleString('pt-BR')}`;
+                // Prioriza totalrs se existir, senão calcula
+                let rawPrice = precoData.totalrs ? precoData.totalrs : precoData.precoindividualrs;
+                const totalBRL = parseFloat(rawPrice.replace('.', '').replace(',', '.'));
                 
+                const coverage = extractCoverageValue(p.nome);
+                const dmh = coverage > 0 ? `USD ${coverage.toLocaleString('pt-BR')}` : p.nome; // Fallback nome se não ler valor
+                
+                // Lógica visual de bagagem
                 let bagagem = 'USD 1.000';
                 if(coverage >= 60000) bagagem = 'USD 1.500';
                 if(coverage >= 100000) bagagem = 'USD 2.000';
-                if(coverage >= 250000) bagagem = 'USD 3.000';
 
                 return {
                     id: p.id,
