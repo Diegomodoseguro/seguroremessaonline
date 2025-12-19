@@ -32,8 +32,6 @@
         .btn-secondary { background-color: transparent; color: var(--color-remessa-main); border: 1px solid var(--color-remessa-main); }
         .form-input, .form-select { border: 1px solid var(--color-border); border-radius: 8px; padding: 10px 16px; width: 100%; background: var(--color-bg-light); color: var(--color-text-title); height: 48px; }
         .flatpickr-input[readonly] { background-color: var(--color-bg-light); cursor: pointer; }
-        .benefit-card { padding: 2rem; border: 1px solid #E0E0E6; border-radius: 16px; height: 100%; text-align: left; background: white; transition: transform 0.3s ease, box-shadow 0.3s ease; }
-        .benefit-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-color: var(--color-remessa-main); }
         .plan-card { border: 1px solid var(--color-border); border-radius: 12px; transition: all 0.2s; background: white; }
         .plan-card:hover { border-color: var(--color-remessa-main); box-shadow: 0 4px 18px rgba(0,0,0,0.08); }
         .loader { border: 3px solid #e0e0e0; border-top: 3px solid var(--color-remessa-main); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; }
@@ -99,7 +97,7 @@
                  <div class="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 animate-on-scroll">
                      <div class="text-center mb-10">
                         <h2 class="text-3xl font-bold text-[#000733] mb-3">Simule seu Seguro Viagem</h2>
-                        <p class="text-[#676c72]">Informe as idades dos passageiros para ver preços exatos.</p>
+                        <p class="text-[#676c72]">Informe os dados e idades para ver os planos.</p>
                      </div>
                      <form id="quote-form" class="space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -162,128 +160,20 @@
             </div>
         </section>
 
-        <!-- Benefícios Padronizados -->
-        <section id="beneficios" class="py-20 bg-white text-center">
-            <div class="container mx-auto px-4 max-w-5xl">
-                <h2 class="text-3xl font-bold text-[#000733] mb-4 animate-on-scroll">Por que escolher a Coris?</h2>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mt-12">
-                     <div class="benefit-card animate-on-scroll">
-                        <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-6 text-[#2244FF]">
-                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                        </div>
-                        <h3 class="text-xl font-bold mb-2 text-[#000733]">Cobertura Completa</h3>
-                        <p class="text-sm text-gray-600">Despesas médicas, hospitalares e odontológicas.</p>
-                    </div>
-                     <div class="benefit-card animate-on-scroll">
-                       <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-6 text-[#2244FF]">
-                           <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                       </div>
-                        <h3 class="text-xl font-bold mb-2 text-[#000733]">Atendimento 24h</h3>
-                        <p class="text-sm text-gray-600">Central própria com atendimento em português.</p>
-                    </div>
-                     <div class="benefit-card animate-on-scroll">
-                        <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-6 text-[#2244FF]">
-                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                        <h3 class="text-xl font-bold mb-2 text-[#000733]">15% OFF Real</h3>
-                        <p class="text-sm text-gray-600">Desconto exclusivo para clientes Remessa Online.</p>
-                    </div>
-                     <div class="benefit-card animate-on-scroll">
-                         <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-6 text-[#2244FF]">
-                             <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.404 12.196a9.75 9.75 0 0113.192 0M2.52 9.354a14.25 14.25 0 0118.96 0M12 18.75a.75.75 0 100-1.5.75.75 0 000 1.5z" /></svg>
-                         </div>
-                        <h3 class="text-xl font-bold mb-2 text-[#000733]">+2GB Internet</h3>
-                        <p class="text-sm text-gray-600">Chip eSIM internacional grátis para sua viagem.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- FAQ Padronizado -->
-        <section id="faq" class="py-20 bg-gray-50 border-t border-gray-200">
-            <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-16">
-                    <div>
-                         <h2 class="text-3xl font-bold text-[#000733] mb-6">Processo Simplificado</h2>
-                         <div class="space-y-6">
-                            <div class="border-l-2 border-blue-600 pl-4 py-2">
-                                <h4 class="font-bold text-gray-800">1. Simulação</h4>
-                                <p class="text-sm text-gray-600 mt-1">Preencha os dados da viagem.</p>
-                            </div>
-                            <div class="border-l-2 border-blue-600 pl-4 py-2">
-                                <h4 class="font-bold text-gray-800">2. Contratação</h4>
-                                <p class="text-sm text-gray-600 mt-1">Escolha o plano e pague com segurança.</p>
-                            </div>
-                            <div class="border-l-2 border-blue-600 pl-4 py-2">
-                                <h4 class="font-bold text-gray-800">3. Conectividade</h4>
-                                <p class="text-sm text-gray-600 mt-1">Receba seu QR Code do eSIM por e-mail.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-[#000733] mb-6">Dúvidas Frequentes</h2>
-                        <div class="space-y-4">
-                            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <h4 class="font-bold text-gray-800 text-sm">O desconto de 15% é aplicado sobre qual valor?</h4>
-                                <p class="text-sm text-gray-600 mt-2">Sobre o valor total do seguro.</p>
-                            </div>
-                            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <h4 class="font-bold text-gray-800 text-sm">Como funciona o eSIM grátis?</h4>
-                                <p class="text-sm text-gray-600 mt-2">É um chip virtual. Você escaneia um QR Code e ativa a internet.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
     </main>
     
-    <!-- Footer Completo (Atualizado) -->
-    <footer class="bg-[#292929] text-gray-400 text-sm pt-12 pb-8 border-t border-gray-800">
-        <div class="bg-[#2244FF] py-8 px-4 -mt-12 mb-12">
-            <div class="container mx-auto max-w-7xl flex flex-col md:flex-row justify-between items-center gap-6">
-                <div class="flex items-center gap-4">
-                    <img src="https://cms-cdn-sae1.remessaonline.com.br/logo_remessa_selo_ra1000_s_4c65050573.png" alt="RA1000" class="h-12 opacity-90">
-                    <span class="text-white font-medium text-lg">Atendimento Exclusivo</span>
-                </div>
-                <div class="text-white text-center md:text-right">
-                    <p class="font-bold text-lg mb-1">Precisa de ajuda?</p>
-                    <p class="opacity-90 hover:opacity-100 transition"><a href="https://wa.me/5511907425892" target="_blank" class="text-white">WhatsApp: +55 (11) 90742-5892</a></p>
-                </div>
-            </div>
-        </div>
-
-        <div class="container mx-auto px-4 max-w-7xl">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
-                <div class="flex items-center gap-4">
-                    <img src="https://cms-cdn-sae1.remessaonline.com.br/Topazio_34c3af990b.webp" alt="Banco Topázio" class="h-6 opacity-70">
-                    <div class="text-xs max-w-xs leading-tight">
-                        Correspondente Cambial do <strong class="text-gray-300">Banco Topázio S.A.</strong>
-                    </div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <span class="text-xs font-bold text-gray-500 uppercase">Segurança Digital</span>
-                    <img src="https://cms-cdn-sae1.remessaonline.com.br/SOC_2_1da06242f2.webp" alt="SOC 2" class="h-8 opacity-70">
-                </div>
-            </div>
-
-            <div class="text-xs space-y-4 font-light text-justify border-t border-gray-800 pt-8">
-                <p>A Remessa Online é uma plataforma digital da Bee Tech Serviços de Tecnologia Ltda., inscrita no CNPJ sob o nº 20.347.824/0001-66.</p>
-                <p><strong>Parceria de Seguros:</strong> Representante de Seguros: Coris Brasil Turismo Viagens e Assistência Internacional LTDA, CNPJ: 04.789.159/0001-98. Seguro garantido pela <strong>Chubb Seguros Brasil S.A.</strong> CNPJ: 03.502.099/0001-18 - Código SUSEP: 0651-3. Processo SUSEP: 15414.625787/2025-14.</p>
-                <div class="flex flex-col md:flex-row justify-between items-center mt-8 pt-8 border-t border-gray-800 gap-4">
-                    <p class="text-center md:text-left">Copyright © 2025 Remessa Online. Todos os direitos reservados.</p>
-                    <p class="text-center text-xs text-gray-600">Powered by <a href="https://www.modosegu.com" target="_blank" class="hover:text-white transition-colors">ModoSegu</a></p>
-                </div>
-            </div>
-        </div>
+    <!-- Footer -->
+    <footer class="bg-[#292929] text-gray-400 text-center py-6 border-t border-gray-800 text-sm">
+        <p>Copyright © 2025 Remessa Online.</p>
     </footer>
     
-    <!-- Botão Flutuante WhatsApp -->
-    <a href="https://wa.me/5511996325612" target="_blank" class="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#20bd5a] text-white p-4 rounded-full shadow-2xl transition-transform hover:scale-110 flex items-center justify-center group border-2 border-white">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+    <!-- Botão WhatsApp Oficial -->
+    <a href="https://wa.me/5511996325612" target="_blank" class="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#128C7E] text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center group border-2 border-white">
+        <!-- Ícone Oficial do WhatsApp -->
+        <svg viewBox="0 0 24 24" class="w-8 h-8 fill-current" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17.472 14.382c-.297-.149-1.758-8.675-2.03-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414zM12 0C5.373 0 0 5.373 0 12c0 2.125.55 4.176 1.587 5.946L.057 24l6.305-1.654C8.049 23.5 10.01 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/>
         </svg>
-        <span class="absolute right-16 bg-white text-gray-800 text-xs font-bold px-3 py-1.5 rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-gray-100 pointer-events-none">
+        <span class="absolute right-full mr-4 bg-white text-gray-800 text-xs font-bold px-3 py-1.5 rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-gray-100 pointer-events-none">
             Falar com atendente
         </span>
     </a>
@@ -330,7 +220,7 @@
 
     <script>
         const STRIPE_KEY = 'pk_live_51S0mcpFWoZCz7UUNSC4AQ34VHLEqOAmy0j84mMhhDfn0uILIYabgbxkCWZiaE70OLLhrRYdAHcFbNIaJScjlpvZB006GCqwN3x';
-        // Supabase acessado via window (CDN)
+        // FIX: Supabase global
         const supabaseClient = window.supabase.createClient('https://ujgnpbrreosmiujkedsa.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqZ25wYnJyZW9zbWl1amtlZHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODU3NDEsImV4cCI6MjA2NzQ2MTc0MX0.QY2xuq4lpZkI3Hi6gwRLi-0VUxuGoWS_LzfGtIJwRzE');
         let stripe, cardElement, currentQuoteData = {}, fetchedPlans = [];
         
@@ -404,7 +294,7 @@
                         destino_cotacao: currentQuoteData.destValue, 
                         passageiros_cotacao: passengers, 
                         dias_cotacao: days, 
-                        origem: 'geral_15',
+                        origem: 'index',
                         passageiros_info: JSON.stringify(quoteDetails) // Salva detalhes iniciais
                     }]).select();
 
@@ -545,7 +435,6 @@
                             planName: document.getElementById('checkout-plan-name').textContent,
                             passengers: passengersList,
                             dates: currentQuoteData.dates,
-                            contactPhone: document.getElementById('contact-name').value, 
                             comprador: { 
                                 nome: passengersList[0].nome, email: currentQuoteData.email, cpf: passengersList[0].cpf,
                                 endereco: { 
