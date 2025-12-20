@@ -5,13 +5,14 @@ const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = process.env.CORIS_LOGIN;
 const CORIS_SENHA = process.env.CORIS_SENHA;
 
-// Helper: XML Exato conforme Manual V5 (Com Tipagem)
+// Helper: Gera XML com tipagem estrita conforme Manual V5
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
-        // item.val é o valor, item.type é o tipo (int/varchar/char)
+        // item.val é o valor, item.type é o tipo (int, varchar, char)
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
+        // Formato exato: <param name="nome" type="tipo" value="valor" />
         paramString += `<param name="${key}" type="${type}" value="${val}" />`;
     }
     return `<?xml version="1.0" encoding="utf-8"?>
@@ -31,7 +32,7 @@ const parseCorisXML = (xmlString, tagName) => {
     while ((match = regex.exec(xmlString)) !== null) {
         const content = match[1];
         const item = {};
-        // Regex ajustado para capturar campos mesmo com quebras
+        // Regex ajustado para capturar conteúdo de tags simples
         const fieldRegex = /<(\w+)>([^<]*)<\/\1>/g;
         let fieldMatch;
         while ((fieldMatch = fieldRegex.exec(content)) !== null) {
@@ -42,7 +43,7 @@ const parseCorisXML = (xmlString, tagName) => {
     return results;
 };
 
-// Extração de valor apenas para exibição
+// Extração de valor para exibição (apenas visual, não filtra mais)
 const extractCoverageValue = (planName) => {
     if (!planName) return 0;
     let match = planName.match(/(\d{1,3})[.,]?(\d{3})?(\s*k|\s*mil)?/i);
@@ -69,8 +70,10 @@ exports.handler = async (event) => {
             return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos (Destino ou Dias).' }) };
         }
 
-        // Distribuição de Idades (Manual V5)
+        // Distribuição de Idades (Manual V5 - Faixas específicas)
+        // pax065: 0-65 | pax7685: 66-70 | pax86100: 71-80 | p2: 81-85
         const brackets = { pax065: 0, pax7685: 0, pax86100: 0, p2: 0 };
+        
         if (ages && Array.isArray(ages)) {
             ages.forEach(ageStr => {
                 const age = parseInt(ageStr);
@@ -78,31 +81,31 @@ exports.handler = async (event) => {
                 else if (age <= 70) brackets.pax7685++;
                 else if (age <= 80) brackets.pax86100++;
                 else if (age <= 85) brackets.p2++;
+                // > 85 ignorado conforme regra do manual
             });
         } else {
-            // Fallback se não vier idades (ex: teste rápido)
-            brackets.pax065 = 1; 
+            brackets.pax065 = 1; // Fallback
         }
 
-        // Configuração de Parâmetros com Tipagem (Manual V5)
+        // Configuração de Parâmetros
         let homeVal = 0;
         let multiVal = 0;
         let destVal = parseInt(destination);
-        let catVal = 1; // 1 = Lazer
+        let catVal = 1; // 1 = Lazer/Negócios
 
         if (tripType == '3') { // Multiviagem
             homeVal = 1;
             catVal = 3;
         } else if (tripType == '4') { // Receptivo
             homeVal = 22;
-            destVal = 2; // Manual: destino deve ser 2 para receptivo
+            destVal = 2; // Manual: destino deve ser 2 (Brasil) para receptivo
             catVal = 5;
         } else if (tripType == '2') { // Intercambio
             catVal = 2;
         }
 
         // 1. Buscar Planos (BuscarPlanosNovosV13)
-        // ATENÇÃO: Manual exige tipos explícitos
+        // ATENÇÃO: Tipos 'int' são obrigatórios para números no SOAP da Coris
         const planosParams = {
             'login': { val: CORIS_LOGIN, type: 'varchar' },
             'senha': { val: CORIS_SENHA, type: 'varchar' },
@@ -120,13 +123,14 @@ exports.handler = async (event) => {
         
         const planosText = await planosRes.text();
         
-        // Verifica erro da API
+        // Verifica erro explícito da API (ex: senha errada, produto inativo)
         const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
+        
         if (erroMatch && erroMatch[1] !== '0') {
              const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido da Coris';
              console.error(`Erro Coris Planos: ${msg}`);
-             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg}` }) };
+             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg} (Cód: ${erroMatch[1]})` }) };
         }
 
         let planos = parseCorisXML(planosText, 'buscaPlanos');
@@ -136,6 +140,7 @@ exports.handler = async (event) => {
         }
 
         // 2. Buscar Preços (BuscarPrecosIndividualV13)
+        // Tipagem rigorosa conforme Manual V5 pág 6
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': { val: CORIS_LOGIN, type: 'varchar' },
@@ -143,7 +148,7 @@ exports.handler = async (event) => {
                 'idplano': { val: p.id, type: 'int' },
                 'dias': { val: days, type: 'int' },
                 'pax065': { val: brackets.pax065, type: 'int' },
-                'pax6675': { val: 0, type: 'int' }, // Descontinuado
+                'pax6675': { val: 0, type: 'int' }, // Campo legado, enviar 0
                 'pax7685': { val: brackets.pax7685, type: 'int' }, 
                 'pax86100': { val: brackets.pax86100, type: 'int' },
                 'angola': { val: 'N', type: 'char' },
@@ -160,7 +165,7 @@ exports.handler = async (event) => {
                 'danosmala': { val: 0, type: 'int' },
                 'pet': { val: 0, type: 'int' },
                 'p1': { val: '0', type: 'varchar' },
-                'p2': { val: brackets.p2.toString(), type: 'varchar' }, // Manual: p2 é varchar
+                'p2': { val: brackets.p2.toString(), type: 'varchar' }, // Manual diz que p2 é varchar
                 'p3': { val: '0', type: 'varchar' } 
             };
 
@@ -171,6 +176,11 @@ exports.handler = async (event) => {
             });
 
             const precoText = await precoRes.text();
+            
+            // Verifica erro na precificação
+            const erroPreco = precoText.match(/<erro>(.*?)<\/erro>/);
+            if (erroPreco && erroPreco[1] !== '0') return null;
+
             const precoData = parseCorisXML(precoText, 'buscaPrecos')[0];
 
             if (precoData && (precoData.precoindividualrs || precoData.totalrs)) {
@@ -199,7 +209,7 @@ exports.handler = async (event) => {
         const validPlans = plansWithPrice.filter(p => p !== null).sort((a, b) => a.originalPriceTotalBRL - b.originalPriceTotalBRL);
         
         if (validPlans.length === 0) {
-             return { statusCode: 400, body: JSON.stringify({ error: 'Planos encontrados, mas sem preço calculado.' }) };
+             return { statusCode: 400, body: JSON.stringify({ error: 'Planos encontrados, mas sem preço calculado (possível erro de idade/produto).' }) };
         }
 
         return { statusCode: 200, body: JSON.stringify(validPlans) };
