@@ -1,17 +1,18 @@
 const fetch = require('node-fetch');
 
-// --- CREDENCIAIS DE AMBIENTE ---
+// --- CREDENCIAIS ---
 const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = process.env.CORIS_LOGIN;
 const CORIS_SENHA = process.env.CORIS_SENHA;
 
-// Helper: XML Formato CORIS (<param name="" value="" />)
+// Helper: XML Exato conforme Manual V5 (Com Tipagem)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
-    for (const [key, value] of Object.entries(params)) {
-        // Garante que valores nulos sejam strings vazias e converte tudo para string
-        const val = (value === null || value === undefined) ? '' : String(value);
-        paramString += `<param name="${key}" value="${val}" />`;
+    for (const [key, item] of Object.entries(params)) {
+        // item.val é o valor, item.type é o tipo (int/varchar/char)
+        const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
+        const type = item.type || 'varchar'; 
+        paramString += `<param name="${key}" type="${type}" value="${val}" />`;
     }
     return `<?xml version="1.0" encoding="utf-8"?>
     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -25,12 +26,12 @@ const createSoapEnvelope = (method, params) => {
 
 const parseCorisXML = (xmlString, tagName) => {
     const results = [];
-    // Ajuste no Regex para capturar conteúdo mesmo com quebras de linha ou caracteres especiais
     const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'g');
     let match;
     while ((match = regex.exec(xmlString)) !== null) {
         const content = match[1];
         const item = {};
+        // Regex ajustado para capturar campos mesmo com quebras
         const fieldRegex = /<(\w+)>([^<]*)<\/\1>/g;
         let fieldMatch;
         while ((fieldMatch = fieldRegex.exec(content)) !== null) {
@@ -41,7 +42,7 @@ const parseCorisXML = (xmlString, tagName) => {
     return results;
 };
 
-// Extração de valor para exibição (Não usado mais para filtro)
+// Extração de valor apenas para exibição
 const extractCoverageValue = (planName) => {
     if (!planName) return 0;
     let match = planName.match(/(\d{1,3})[.,]?(\d{3})?(\s*k|\s*mil)?/i);
@@ -57,57 +58,59 @@ const extractCoverageValue = (planName) => {
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
     
-    // Verificação de segurança das credenciais
     if (!CORIS_LOGIN || !CORIS_SENHA) {
-        console.error("Credenciais da CORIS não encontradas nas variáveis de ambiente.");
-        return { statusCode: 500, body: JSON.stringify({ error: 'Erro de configuração no servidor (Credenciais).' }) };
+        return { statusCode: 500, body: JSON.stringify({ error: 'Credenciais ausentes no servidor.' }) };
     }
 
     try {
         const { destination, days, ages, tripType } = JSON.parse(event.body); 
 
-        if (!destination || !days || !ages) {
-            return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos. Verifique destino, datas e idades.' }) };
+        if (!destination || !days) {
+            return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos (Destino ou Dias).' }) };
         }
 
-        // 1. Distribuir idades nas faixas da Coris (Manual V5)
+        // Distribuição de Idades (Manual V5)
         const brackets = { pax065: 0, pax7685: 0, pax86100: 0, p2: 0 };
-        ages.forEach(ageStr => {
-            const age = parseInt(ageStr);
-            if (age <= 65) brackets.pax065++;
-            else if (age <= 70) brackets.pax7685++; // 66-70
-            else if (age <= 80) brackets.pax86100++; // 71-80
-            else if (age <= 85) brackets.p2++; // 81-85 (p2 = >81 no manual)
-            // Idades > 85 não são contabilizadas para cotação segundo regra padrão, mas não travam o fluxo
-        });
+        if (ages && Array.isArray(ages)) {
+            ages.forEach(ageStr => {
+                const age = parseInt(ageStr);
+                if (age <= 65) brackets.pax065++;
+                else if (age <= 70) brackets.pax7685++;
+                else if (age <= 80) brackets.pax86100++;
+                else if (age <= 85) brackets.p2++;
+            });
+        } else {
+            // Fallback se não vier idades (ex: teste rápido)
+            brackets.pax065 = 1; 
+        }
 
-        // 2. Parâmetros de Busca de Planos
-        let homeVal = '0';
-        let multiVal = '0';
-        let destVal = destination; // Mantém como string ou int, o helper converte
-        let catVal = '1'; // Default Lazer
+        // Configuração de Parâmetros com Tipagem (Manual V5)
+        let homeVal = 0;
+        let multiVal = 0;
+        let destVal = parseInt(destination);
+        let catVal = 1; // 1 = Lazer
 
         if (tripType == '3') { // Multiviagem
-            homeVal = '1';
-            catVal = '3';
+            homeVal = 1;
+            catVal = 3;
         } else if (tripType == '4') { // Receptivo
-            homeVal = '22';
-            destVal = '2'; // Manual exige destino 2 para receptivo
-            catVal = '5';
+            homeVal = 22;
+            destVal = 2; // Manual: destino deve ser 2 para receptivo
+            catVal = 5;
         } else if (tripType == '2') { // Intercambio
-            catVal = '2';
+            catVal = 2;
         }
 
+        // 1. Buscar Planos (BuscarPlanosNovosV13)
+        // ATENÇÃO: Manual exige tipos explícitos
         const planosParams = {
-            'login': CORIS_LOGIN,
-            'senha': CORIS_SENHA,
-            'destino': destVal,
-            'vigencia': days,
-            'home': homeVal,
-            'multi': multiVal
+            'login': { val: CORIS_LOGIN, type: 'varchar' },
+            'senha': { val: CORIS_SENHA, type: 'varchar' },
+            'destino': { val: destVal, type: 'int' },
+            'vigencia': { val: days, type: 'int' },
+            'home': { val: homeVal, type: 'int' },
+            'multi': { val: multiVal, type: 'int' }
         };
-
-        console.log(`Buscando planos CORIS. Destino: ${destVal}, Dias: ${days}, Home: ${homeVal}`);
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
@@ -117,51 +120,48 @@ exports.handler = async (event) => {
         
         const planosText = await planosRes.text();
         
-        // Diagnóstico de erro explícito da CORIS
+        // Verifica erro da API
         const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
-        
         if (erroMatch && erroMatch[1] !== '0') {
              const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido da Coris';
-             console.error(`Erro API Coris (BuscarPlanos): Cód ${erroMatch[1]} - ${msg}`);
-             // Retorna o erro exato para o frontend para facilitar o diagnóstico do usuário
-             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg} (Cód: ${erroMatch[1]})` }) };
+             console.error(`Erro Coris Planos: ${msg}`);
+             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg}` }) };
         }
 
         let planos = parseCorisXML(planosText, 'buscaPlanos');
 
         if (planos.length === 0) {
-            console.warn("API Coris retornou sucesso (erro=0), mas a lista de planos está vazia.");
-            return { statusCode: 400, body: JSON.stringify({ error: 'Nenhum plano disponível para o seu utilizador Coris neste destino/data. Verifique se o produto está ativo na seguradora.' }) };
+            return { statusCode: 400, body: JSON.stringify({ error: 'Nenhum plano disponível para o seu usuário Coris neste destino/data. Verifique se o produto está ativo na seguradora.' }) };
         }
 
-        // 3. Buscar Preços Individuais
+        // 2. Buscar Preços (BuscarPrecosIndividualV13)
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
-                'login': CORIS_LOGIN,
-                'senha': CORIS_SENHA,
-                'idplano': p.id,
-                'dias': days,
-                'pax065': brackets.pax065,
-                'pax6675': '0', // Descontinuado
-                'pax7685': brackets.pax7685, 
-                'pax86100': brackets.pax86100,
-                'angola': 'N',
-                'furtoelet': '0',
-                'bagagens': '0',
-                'morteac': '0',
-                'mortenat': '0',
-                'cancplus': '0',
-                'cancany': '0',
-                'formapagamento': '',
-                'destino': destVal,
-                'categoria': catVal,
-                'codigodesconto': '',
-                'danosmala': '0',
-                'pet': '0',
-                'p1': '0', 
-                'p2': brackets.p2, 
-                'p3': '0' 
+                'login': { val: CORIS_LOGIN, type: 'varchar' },
+                'senha': { val: CORIS_SENHA, type: 'varchar' },
+                'idplano': { val: p.id, type: 'int' },
+                'dias': { val: days, type: 'int' },
+                'pax065': { val: brackets.pax065, type: 'int' },
+                'pax6675': { val: 0, type: 'int' }, // Descontinuado
+                'pax7685': { val: brackets.pax7685, type: 'int' }, 
+                'pax86100': { val: brackets.pax86100, type: 'int' },
+                'angola': { val: 'N', type: 'char' },
+                'furtoelet': { val: 0, type: 'int' },
+                'bagagens': { val: 0, type: 'int' },
+                'morteac': { val: 0, type: 'int' },
+                'mortenat': { val: 0, type: 'int' },
+                'cancplus': { val: 0, type: 'int' },
+                'cancany': { val: 0, type: 'int' },
+                'formapagamento': { val: '', type: 'varchar' },
+                'destino': { val: destVal, type: 'int' },
+                'categoria': { val: catVal, type: 'int' },
+                'codigodesconto': { val: '', type: 'varchar' },
+                'danosmala': { val: 0, type: 'int' },
+                'pet': { val: 0, type: 'int' },
+                'p1': { val: '0', type: 'varchar' },
+                'p2': { val: brackets.p2.toString(), type: 'varchar' }, // Manual: p2 é varchar
+                'p3': { val: '0', type: 'varchar' } 
             };
 
             const precoRes = await fetch(CORIS_URL, {
@@ -171,26 +171,15 @@ exports.handler = async (event) => {
             });
 
             const precoText = await precoRes.text();
-            
-            // Verifica erro na precificação individual
-            const erroPrecoMatch = precoText.match(/<erro>(.*?)<\/erro>/);
-            if (erroPrecoMatch && erroPrecoMatch[1] !== '0') {
-                 console.warn(`Erro ao precificar plano ${p.id}:`, precoText);
-                 return null; // Pula este plano se der erro
-            }
-
             const precoData = parseCorisXML(precoText, 'buscaPrecos')[0];
 
             if (precoData && (precoData.precoindividualrs || precoData.totalrs)) {
-                // Tenta pegar o totalrs (total com agravos), se não, pega o individual
                 let rawPrice = precoData.totalrs ? precoData.totalrs : precoData.precoindividualrs;
-                // Remove pontos de milhar e troca vírgula decimal por ponto
                 const totalBRL = parseFloat(rawPrice.replace(/\./g, '').replace(',', '.'));
                 
                 const coverage = extractCoverageValue(p.nome);
-                const dmh = coverage > 0 ? `USD ${coverage.toLocaleString('pt-BR')}` : p.nome; 
+                const dmh = coverage > 0 ? `USD ${coverage.toLocaleString('pt-BR')}` : p.nome;
                 
-                // Lógica visual de bagagem (apenas cosmética)
                 let bagagem = 'USD 1.000';
                 if(coverage >= 60000) bagagem = 'USD 1.500';
                 if(coverage >= 100000) bagagem = 'USD 2.000';
@@ -210,13 +199,13 @@ exports.handler = async (event) => {
         const validPlans = plansWithPrice.filter(p => p !== null).sort((a, b) => a.originalPriceTotalBRL - b.originalPriceTotalBRL);
         
         if (validPlans.length === 0) {
-             return { statusCode: 400, body: JSON.stringify({ error: 'Planos encontrados, mas a Coris não retornou preço válido para eles. Verifique as idades ou a configuração do produto.' }) };
+             return { statusCode: 400, body: JSON.stringify({ error: 'Planos encontrados, mas sem preço calculado.' }) };
         }
 
         return { statusCode: 200, body: JSON.stringify(validPlans) };
 
     } catch (error) {
-        console.error('Erro Proxy Coris (Exception):', error);
-        return { statusCode: 500, body: JSON.stringify({ error: `Erro interno: ${error.message}` }) };
+        console.error('Erro Proxy Coris:', error);
+        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
     }
 };
