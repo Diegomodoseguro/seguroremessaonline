@@ -1,6 +1,7 @@
 const fetch = require('node-fetch'); 
 const { createClient } = require('@supabase/supabase-js');
 
+// Configurações
 const SUPABASE_URL = process.env.SUPABASE_URL; 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; 
 const EZSIM_USER = process.env.EZSIM_USER;
@@ -16,12 +17,13 @@ const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO CRÍTICO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Helper XML Corrigido (<param name...>)
+// Helper XML com Tipagem Corrigida
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
-    for (const [key, value] of Object.entries(params)) {
-        const val = value === null || value === undefined ? '' : value;
-        paramString += `<param name="${key}" value="${val}" />`;
+    for (const [key, item] of Object.entries(params)) {
+        const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
+        const type = item.type || 'varchar';
+        paramString += `<param name="${key}" type="${type}" value="${val}" />`;
     }
     return `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><${method} xmlns="http://www.coris.com.br/WebService/">${paramString}</${method}></soap:Body></soap:Envelope>`;
 };
@@ -31,7 +33,7 @@ const extractTagValue = (xml, tagName) => {
     return match ? match[1] : null;
 };
 
-// Emissão Coris
+// Emissão Coris (GravarPedido e EmitirPedido)
 async function emitirCoris(leadData) {
     let listaPassageiros = '';
     leadData.passengers.forEach(p => {
@@ -44,11 +46,19 @@ async function emitirCoris(leadData) {
     });
     listaPassageiros = listaPassageiros.slice(0, -1);
 
+    // GravarPedido - Parâmetros Tipados
     const gravarParams = {
-        'login': CORIS_LOGIN, 'senha': CORIS_SENHA, 'idplano': leadData.planId,
-        'saida': leadData.dates.departure, 'retorno': leadData.dates.return, 'destino': leadData.destination,
-        'passageiros': listaPassageiros, 'contato': leadData.comprador.nome, 'email': leadData.comprador.email,
-        'telefone': (leadData.contactPhone || '00000000000').replace(/\D/g, ''), 'pagamento': 'CARTAO' 
+        'login': { val: CORIS_LOGIN, type: 'varchar' },
+        'senha': { val: CORIS_SENHA, type: 'varchar' },
+        'idplano': { val: leadData.planId, type: 'int' },
+        'saida': { val: leadData.dates.departure, type: 'varchar' },
+        'retorno': { val: leadData.dates.return, type: 'varchar' },
+        'destino': { val: leadData.destination, type: 'int' },
+        'passageiros': { val: listaPassageiros, type: 'varchar' },
+        'contato': { val: leadData.comprador.nome, type: 'varchar' },
+        'email': { val: leadData.comprador.email, type: 'varchar' },
+        'telefone': { val: (leadData.contactPhone || '00000000000').replace(/\D/g, ''), type: 'varchar' },
+        'pagamento': { val: 'CARTAO', type: 'varchar' } 
     };
 
     const gravarRes = await fetch(CORIS_URL, {
@@ -61,7 +71,12 @@ async function emitirCoris(leadData) {
     
     if (!pedidoId || pedidoId === '0') throw new Error(`Coris GravarPedido Falhou: ${extractTagValue(gravarText, 'mensagem')}`);
 
-    const emitirParams = { 'login': CORIS_LOGIN, 'senha': CORIS_SENHA, 'idpedido': pedidoId };
+    // EmitirPedido
+    const emitirParams = { 
+        'login': { val: CORIS_LOGIN, type: 'varchar' },
+        'senha': { val: CORIS_SENHA, type: 'varchar' },
+        'idpedido': { val: pedidoId, type: 'int' }
+    };
     const emitirRes = await fetch(CORIS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://www.coris.com.br/WebService/EmitirPedido' },
@@ -78,6 +93,7 @@ async function emitirCoris(leadData) {
     return { voucher: vouchers.join(', '), link: linkBilhete, pedidoId: pedidoId };
 }
 
+// Emissão Ezsim (Mantido)
 async function getEzsimToken() {
     try {
         const response = await fetch(`${EZSIM_API_URL}/auth/v1/token?grant_type=password`, {
