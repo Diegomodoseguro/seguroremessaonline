@@ -77,7 +77,7 @@
     </header>
 
     <main>
-        <!-- Hero Section SempreÚnico -->
+        <!-- Hero Section SempreÚnico (Fundo Escuro) -->
         <section class="horizontal-section relative overflow-hidden">
             <div class="container mx-auto px-4 max-w-7xl relative z-10">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
@@ -89,7 +89,7 @@
                             Confie em quem prioriza você
                         </h1>
                         <p class="text-lg text-gray-200 font-light mb-10 max-w-lg">
-                            Seguro Viagem Coris com <strong>20% OFF</strong> e <strong>2GB de internet grátis</strong>. A proteção mais completa (Planos de 60k a 1M).
+                            Seguro Viagem Coris com <strong>20% OFF</strong> e <strong>2GB de internet grátis</strong>. A proteção mais completa para clientes VIP da Remessa Online.
                         </p>
                         <div class="flex flex-col sm:flex-row gap-4">
                             <a href="#cotacao" class="btn btn-cta text-lg px-8 py-4 shadow-lg hover:-translate-y-1 w-full sm:w-auto text-center">
@@ -254,7 +254,7 @@
         </section>
     </main>
     
-    <!-- Footer Completo -->
+    <!-- Footer Completo (Como Solicitado) -->
     <footer class="bg-[#292929] text-gray-400 text-sm pt-12 pb-8 border-t border-gray-800">
         <div class="bg-[#2244FF] py-8 px-4 -mt-12 mb-12">
             <div class="container mx-auto max-w-7xl flex flex-col md:flex-row justify-between items-center gap-6">
@@ -353,10 +353,10 @@
 
     <script>
         const STRIPE_KEY = 'pk_live_51S0mcpFWoZCz7UUNSC4AQ34VHLEqOAmy0j84mMhhDfn0uILIYabgbxkCWZiaE70OLLhrRYdAHcFbNIaJScjlpvZB006GCqwN3x';
-        // FIX: Supabase global
         const supabaseClient = window.supabase.createClient('https://ujgnpbrreosmiujkedsa.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqZ25wYnJyZW9zbWl1amtlZHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODU3NDEsImV4cCI6MjA2NzQ2MTc0MX0.QY2xuq4lpZkI3Hi6gwRLi-0VUxuGoWS_LzfGtIJwRzE');
         let stripe, cardElement, currentQuoteData = {}, fetchedPlans = [];
         
+        // Função para atualizar inputs de idade
         window.updateAgeInputs = () => {
             const count = parseInt(document.getElementById('passengers-count').value) || 1;
             const container = document.getElementById('ages-container');
@@ -373,6 +373,7 @@
             const fpDeparture = flatpickr("#departure-date", { ...dateConfig, onChange: (d) => fpReturn.set('minDate', d[0]) });
             const fpReturn = flatpickr("#return-date", { ...dateConfig, onChange: () => updateDuration() });
             
+            // Inicializa 1 input de idade
             updateAgeInputs();
 
             function updateDuration() {
@@ -393,6 +394,7 @@
                 document.getElementById('quote-btn-loader').classList.remove('hidden');
                 feedback.classList.add('hidden');
                 
+                // Coleta Dados
                 const days = parseInt(document.getElementById('duration-days').textContent) || 0;
                 if(days <= 0) { alert("Selecione as datas."); btn.disabled = false; return; }
                 
@@ -413,7 +415,7 @@
                 };
 
                 try {
-                    // CORREÇÃO: Salvando JSON com detalhes da cotação para o Admin
+                    // 1. Cria Lead
                     const quoteDetails = {
                         idades: ages,
                         tipo_viagem_id: tripType,
@@ -421,19 +423,15 @@
                     };
 
                     const { data: leadData, error: leadError } = await supabaseClient.from('remessaonlinesioux_leads').insert([{
-                        status: 'cotacao_iniciada', 
-                        email_usuario: currentQuoteData.email, 
-                        nome_usuario: currentQuoteData.name,
-                        destino_cotacao: currentQuoteData.destValue, 
-                        passageiros_cotacao: passengers, 
-                        dias_cotacao: days, 
-                        origem: 'sempre_unico',
-                        passageiros_info: JSON.stringify(quoteDetails) // Salva detalhes iniciais
+                        status: 'cotacao_iniciada', email_usuario: currentQuoteData.email, nome_usuario: currentQuoteData.name,
+                        destino_cotacao: currentQuoteData.destValue, passageiros_cotacao: passengers, dias_cotacao: days, origem: 'sempre_unico',
+                        passageiros_info: JSON.stringify(quoteDetails)
                     }]).select();
 
                     if (leadError) throw leadError;
                     currentQuoteData.leadId = leadData[0].id;
 
+                    // 2. Busca Planos via Proxy (API Coris)
                     const response = await fetch('/.netlify/functions/coris-proxy', {
                         method: 'POST',
                         body: JSON.stringify({ 
@@ -441,7 +439,7 @@
                             days: days, 
                             ages: ages,
                             tripType: tripType,
-                            origin: 'sempre_unico'
+                            origin: 'sempre_unico' // Filtro 60k a 1M
                         })
                     });
                     
@@ -451,6 +449,7 @@
                     }
                     fetchedPlans = await response.json();
 
+                    // 3. Renderiza Resultados
                     const container = document.getElementById('plans-container');
                     container.innerHTML = '';
                     
@@ -486,7 +485,7 @@
 
                 } catch (error) {
                     console.error(error);
-                    feedback.textContent = `Erro: ${error.message}`;
+                    feedback.textContent = `Atenção: ${error.message}`;
                     feedback.classList.remove('hidden');
                 } finally {
                     btn.disabled = false; document.getElementById('quote-btn-loader').classList.add('hidden');
@@ -516,6 +515,7 @@
                 const paxContainer = document.getElementById('passenger-forms');
                 paxContainer.innerHTML = '';
                 for(let i=1; i<=currentQuoteData.passengers; i++) {
+                    // Adicionado campo de Nascimento obrigatório
                     paxContainer.innerHTML += `
                     <div class="border p-4 rounded-lg mb-3 bg-gray-50">
                         <h4 class="text-xs font-bold text-gray-500 mb-3 uppercase">Passageiro ${i} (Idade: ${currentQuoteData.ages[i-1]})</h4>
@@ -528,7 +528,8 @@
                         </div>
                     </div>`;
                     // Inicializa máscara de data
-                    IMask(document.getElementById(`pax-${i}-nasc`), {mask: '00/00/0000'});
+                    try { IMask(document.getElementById(`pax-${i}-nasc`), {mask: '00/00/0000'}); } catch(e){}
+                    try { IMask(document.getElementById(`pax-${i}-cpf`), {mask: '000.000.000-00'}); } catch(e){}
                 }
             };
 
