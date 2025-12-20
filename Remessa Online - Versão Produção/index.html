@@ -226,8 +226,10 @@
                          <div class="checkout-grid">
                              <span class="checkout-label">Plano:</span> <span class="checkout-value" id="checkout-plan-name"></span>
                              <span class="checkout-label">Destino:</span> <span class="checkout-value" id="checkout-destination-name"></span>
+                             <span class="checkout-label">Período:</span> <span class="checkout-value" id="checkout-dates"></span>
                              <span class="checkout-label">Passageiros:</span> <span class="checkout-value" id="checkout-passengers-count"></span>
-                             <span class="checkout-label">Cobertura:</span> <span class="checkout-value" id="checkout-dmh"></span>
+                             <span class="checkout-label">Cobertura Médica:</span> <span class="checkout-value" id="checkout-dmh"></span>
+                             <span class="checkout-label">Seguro Bagagem:</span> <span class="checkout-value" id="checkout-bagagem"></span>
                          </div>
                          <div class="mt-4 pt-4 border-t border-blue-200 flex justify-between items-center">
                              <span class="font-bold text-gray-700">Total a Pagar:</span>
@@ -256,11 +258,11 @@
 
     <script>
         const STRIPE_KEY = 'pk_live_51S0mcpFWoZCz7UUNSC4AQ34VHLEqOAmy0j84mMhhDfn0uILIYabgbxkCWZiaE70OLLhrRYdAHcFbNIaJScjlpvZB006GCqwN3x';
-        
+        // FIX: Supabase global com window.supabase
         let supabaseClient;
         try {
             if (typeof supabase === 'undefined' && typeof window.supabase === 'undefined') {
-                console.error("ERRO CRÍTICO: A biblioteca Supabase não carregou.");
+                console.error("ERRO CRÍTICO: A biblioteca Supabase não carregou. Verifique sua conexão ou bloqueadores de anúncio.");
                 alert("Erro de conexão: O sistema de segurança não pôde ser carregado. Por favor, recarregue a página.");
             } else {
                 const sb = window.supabase || supabase;
@@ -312,13 +314,12 @@
                 if(days <= 0) { alert("Selecione as datas."); btn.disabled = false; return; }
                 
                 const passengers = parseInt(document.getElementById('passengers-count').value);
-                const ages = Array.from(document.querySelectorAll('.pax-age')).map(i => i.value || '30');
+                const ages = Array.from(document.querySelectorAll('.pax-age')).map(i => i.value);
                 const destSelect = document.getElementById('destination');
-                const tripTypeSelect = document.getElementById('trip-type');
+                const tripType = document.getElementById('trip-type').value;
 
                 currentQuoteData = { 
-                    days, passengers, ages, 
-                    tripType: tripTypeSelect.value,
+                    days, passengers, ages, tripType,
                     destValue: destSelect.value, 
                     destText: destSelect.options[destSelect.selectedIndex].text,
                     dateStartDisplay: fpDeparture.input.value, 
@@ -329,10 +330,11 @@
                 };
 
                 try {
+                    // CORREÇÃO: Salvando JSON com detalhes da cotação para o Admin
                     const quoteDetails = {
                         idades: ages,
-                        tipo_viagem_id: currentQuoteData.tripType,
-                        tipo_viagem_nome: tripTypeSelect.options[tripTypeSelect.selectedIndex].text
+                        tipo_viagem_id: tripType,
+                        tipo_viagem_nome: document.getElementById('trip-type').options[document.getElementById('trip-type').selectedIndex].text
                     };
 
                     const { data: leadData, error: leadError } = await supabaseClient.from('remessaonlinesioux_leads').insert([{
@@ -343,7 +345,7 @@
                         passageiros_cotacao: passengers, 
                         dias_cotacao: days, 
                         origem: 'index',
-                        passageiros_info: JSON.stringify(quoteDetails)
+                        passageiros_info: JSON.stringify(quoteDetails) // Salva detalhes iniciais
                     }]).select();
 
                     if (leadError) throw leadError;
@@ -355,8 +357,8 @@
                             destination: currentQuoteData.destValue, 
                             days: days, 
                             ages: ages,
-                            tripType: currentQuoteData.tripType,
-                            origin: 'index'
+                            tripType: tripType,
+                            origin: 'index' // Envia a origem, mas o filtro foi removido no backend
                         })
                     });
                     
@@ -373,7 +375,7 @@
                         container.innerHTML = '<p class="text-center col-span-3 text-gray-500">Nenhum plano disponível para os filtros selecionados.</p>';
                     } else {
                         fetchedPlans.forEach(plan => {
-                            const finalPrice = plan.originalPriceTotalBRL * 0.85; 
+                            const finalPrice = plan.originalPriceTotalBRL * 0.85; // 15% OFF (Regra Index)
                             container.innerHTML += `
                                 <div class="plan-card p-6 flex flex-col justify-between animate-on-scroll is-visible rounded-xl border border-gray-200 shadow-md hover:shadow-xl transition-shadow">
                                     <div>
@@ -410,7 +412,7 @@
 
             window.openCheckout = (id) => {
                 const plan = fetchedPlans.find(p => p.id === id);
-                const price = plan.originalPriceTotalBRL * 0.85;
+                const price = plan.originalPriceTotalBRL * 0.85; // 15% OFF
 
                 const modal = document.getElementById('checkout-modal');
                 modal.classList.remove('hidden', 'pointer-events-none');
@@ -423,10 +425,7 @@
                 document.getElementById('checkout-passengers-count').textContent = currentQuoteData.passengers;
                 document.getElementById('checkout-dates').textContent = `${currentQuoteData.dateStartDisplay} a ${currentQuoteData.dateEndDisplay}`;
                 document.getElementById('checkout-dmh').textContent = plan.dmh;
-                
-                // Elemento opcional Bagagem
-                const bagElem = document.getElementById('checkout-bagagem');
-                if(bagElem) bagElem.textContent = plan.bagagem;
+                document.getElementById('checkout-bagagem').textContent = plan.bagagem;
 
                 document.getElementById('selected-plan-id').value = id;
                 document.getElementById('selected-plan-price-brl').value = price;
@@ -445,8 +444,8 @@
                             </div>
                         </div>
                     </div>`;
-                    try { IMask(document.getElementById(`pax-${i}-nasc`), {mask: '00/00/0000'}); } catch(e){}
-                    try { IMask(document.getElementById(`pax-${i}-cpf`), {mask: '000.000.000-00'}); } catch(e){}
+                    IMask(document.getElementById(`pax-${i}-nasc`), {mask: '00/00/0000'});
+                    IMask(document.getElementById(`pax-${i}-cpf`), {mask: '000.000.000-00'});
                 }
             };
 
