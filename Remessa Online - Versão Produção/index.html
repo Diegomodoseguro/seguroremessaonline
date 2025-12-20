@@ -97,7 +97,7 @@
                  <div class="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 animate-on-scroll">
                      <div class="text-center mb-10">
                         <h2 class="text-3xl font-bold text-[#000733] mb-3">Simule seu Seguro Viagem</h2>
-                        <p class="text-[#676c72]">Informe os dados e idades para ver os planos.</p>
+                        <p class="text-[#676c72]">Informe as idades dos passageiros para ver preços exatos.</p>
                      </div>
                      <form id="quote-form" class="space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -167,7 +167,7 @@
         <p>Copyright © 2025 Remessa Online.</p>
     </footer>
     
-    <!-- Botão WhatsApp Oficial -->
+    <!-- Botão Flutuante WhatsApp Oficial -->
     <a href="https://wa.me/5511996325612" target="_blank" class="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#128C7E] text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center group border-2 border-white">
         <!-- Ícone Oficial do WhatsApp -->
         <svg viewBox="0 0 24 24" class="w-8 h-8 fill-current" xmlns="http://www.w3.org/2000/svg">
@@ -220,8 +220,20 @@
 
     <script>
         const STRIPE_KEY = 'pk_live_51S0mcpFWoZCz7UUNSC4AQ34VHLEqOAmy0j84mMhhDfn0uILIYabgbxkCWZiaE70OLLhrRYdAHcFbNIaJScjlpvZB006GCqwN3x';
-        // FIX: Supabase global
-        const supabaseClient = window.supabase.createClient('https://ujgnpbrreosmiujkedsa.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqZ25wYnJyZW9zbWl1amtlZHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODU3NDEsImV4cCI6MjA2NzQ2MTc0MX0.QY2xuq4lpZkI3Hi6gwRLi-0VUxuGoWS_LzfGtIJwRzE');
+        // FIX: Supabase global com window.supabase
+        let supabaseClient;
+        try {
+            if (typeof supabase === 'undefined' && typeof window.supabase === 'undefined') {
+                console.error("ERRO CRÍTICO: A biblioteca Supabase não carregou. Verifique sua conexão ou bloqueadores de anúncio.");
+                alert("Erro de conexão: O sistema de segurança não pôde ser carregado. Por favor, recarregue a página.");
+            } else {
+                const sb = window.supabase || supabase;
+                supabaseClient = sb.createClient('https://ujgnpbrreosmiujkedsa.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqZ25wYnJyZW9zbWl1amtlZHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODU3NDEsImV4cCI6MjA2NzQ2MTc0MX0.QY2xuq4lpZkI3Hi6gwRLi-0VUxuGoWS_LzfGtIJwRzE');
+            }
+        } catch (err) {
+            console.error("Erro ao inicializar Supabase:", err);
+        }
+
         let stripe, cardElement, currentQuoteData = {}, fetchedPlans = [];
         
         window.updateAgeInputs = () => {
@@ -234,7 +246,7 @@
         };
 
         document.addEventListener('DOMContentLoaded', () => {
-            if(window.Stripe) { stripe = Stripe(STRIPE_KEY); const elements = stripe.elements(); cardElement = elements.create('card', { hidePostalCode: true }); }
+            if(window.Stripe) { stripe = Stripe(STRIPE_KEY); const elements = stripe.elements(); cardElement = elements.create('card', { hidePostalCode: true }); cardElement.mount('#card-element'); }
             
             const dateConfig = { dateFormat: "Y-m-d", altInput: true, altFormat: "d/m/Y", minDate: "today", locale: "pt" };
             const fpDeparture = flatpickr("#departure-date", { ...dateConfig, onChange: (d) => fpReturn.set('minDate', d[0]) });
@@ -312,7 +324,10 @@
                         })
                     });
                     
-                    if(!response.ok) throw new Error("Erro ao buscar planos.");
+                    if(!response.ok) {
+                         const err = await response.json();
+                         throw new Error(err.error || "Erro na cotação.");
+                    }
                     fetchedPlans = await response.json();
 
                     const container = document.getElementById('plans-container');
