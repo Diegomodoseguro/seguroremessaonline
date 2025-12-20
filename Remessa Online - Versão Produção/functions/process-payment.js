@@ -1,7 +1,7 @@
 const fetch = require('node-fetch'); 
 const { createClient } = require('@supabase/supabase-js');
 
-// Configurações
+// Configs
 const SUPABASE_URL = process.env.SUPABASE_URL; 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; 
 const EZSIM_USER = process.env.EZSIM_USER;
@@ -17,7 +17,7 @@ const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO CRÍTICO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Helper XML com Tipagem Corrigida
+// Helper XML com Tipagem (IMPORTANTE)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
@@ -33,7 +33,7 @@ const extractTagValue = (xml, tagName) => {
     return match ? match[1] : null;
 };
 
-// Emissão Coris (GravarPedido e EmitirPedido)
+// Emissão Coris (Tipada)
 async function emitirCoris(leadData) {
     let listaPassageiros = '';
     leadData.passengers.forEach(p => {
@@ -46,7 +46,6 @@ async function emitirCoris(leadData) {
     });
     listaPassageiros = listaPassageiros.slice(0, -1);
 
-    // GravarPedido - Parâmetros Tipados
     const gravarParams = {
         'login': { val: CORIS_LOGIN, type: 'varchar' },
         'senha': { val: CORIS_SENHA, type: 'varchar' },
@@ -71,7 +70,6 @@ async function emitirCoris(leadData) {
     
     if (!pedidoId || pedidoId === '0') throw new Error(`Coris GravarPedido Falhou: ${extractTagValue(gravarText, 'mensagem')}`);
 
-    // EmitirPedido
     const emitirParams = { 
         'login': { val: CORIS_LOGIN, type: 'varchar' },
         'senha': { val: CORIS_SENHA, type: 'varchar' },
@@ -93,7 +91,6 @@ async function emitirCoris(leadData) {
     return { voucher: vouchers.join(', '), link: linkBilhete, pedidoId: pedidoId };
 }
 
-// Emissão Ezsim (Mantido)
 async function getEzsimToken() {
     try {
         const response = await fetch(`${EZSIM_API_URL}/auth/v1/token?grant_type=password`, {
