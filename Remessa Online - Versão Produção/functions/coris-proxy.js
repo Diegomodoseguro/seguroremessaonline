@@ -49,13 +49,24 @@ const extractCoverageValue = (planName) => {
 };
 
 exports.handler = async (event) => {
-    if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
+    // Permitir CORS para testes locais e produção
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS'
+    };
+
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers, body: '' };
+    }
+
+    if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: 'Method Not Allowed' };
 
     try {
         const { destination, days, ages, tripType } = JSON.parse(event.body); 
 
         // 1. Validação e Preparação dos Dados
-        if (!destination || !days) return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos.' }) };
+        if (!destination || !days) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Dados incompletos (Destino ou Dias faltando).' }) };
 
         const brackets = { pax065: 0, pax7685: 0, pax86100: 0, p2: 0 };
         (ages || []).forEach(ageStr => {
@@ -68,19 +79,37 @@ exports.handler = async (event) => {
         if ((ages || []).length === 0) brackets.pax065 = 1;
 
         let homeVal = 0, multiVal = 0, destVal = parseInt(destination), catVal = 1;
-        if (tripType == '3') { homeVal = 1; catVal = 3; }
-        else if (tripType == '4') { homeVal = 22; destVal = 2; catVal = 5; }
-        else if (tripType == '2') { catVal = 2; }
+        let searchDays = days; // Vigência padrão para a busca é a duração da viagem
+
+        // Lógica de Tipo de Viagem Corrigida
+        if (tripType == '3') { // Multiviagem (Anual)
+            homeVal = 1; 
+            catVal = 3;
+            // Para planos anuais, a vigência de busca deve ser 365, não os dias da primeira viagem
+            searchDays = 365; 
+            // Para planos anuais, multi deve ser 30 (padrão de mercado) para retornar os planos corretos
+            multiVal = 30; 
+        }
+        else if (tripType == '4') { // Receptivo
+            homeVal = 22; 
+            destVal = 2; // Força Brasil
+            catVal = 5; 
+        }
+        else if (tripType == '2') { // Intercâmbio/Estudante
+            catVal = 2; 
+        }
 
         // 2. Buscar Planos (BuscarPlanosNovosV13)
         const planosParams = {
             'login': { val: CORIS_LOGIN, type: 'varchar' },
             'senha': { val: CORIS_SENHA, type: 'varchar' },
             'destino': { val: destVal, type: 'int' },
-            'vigencia': { val: days, type: 'int' },
+            'vigencia': { val: searchDays, type: 'int' }, // Usa a vigência ajustada
             'home': { val: homeVal, type: 'int' },
             'multi': { val: multiVal, type: 'int' }
         };
+
+        console.log("Busca Params:", JSON.stringify(planosParams)); // Log para debug no Netlify
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
@@ -95,23 +124,32 @@ exports.handler = async (event) => {
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
         if (erroMatch && erroMatch[1] !== '0') {
              const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido';
-             console.error("Erro CORIS:", msg);
-             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg}` }) };
+             console.error("Erro CORIS API:", msg, "Params:", planosParams);
+             return { statusCode: 400, headers, body: JSON.stringify({ error: `Coris: ${msg}` }) };
         }
 
         let planos = parseCorisXML(planosText, 'buscaPlanos');
 
         if (planos.length === 0) {
-            return { statusCode: 400, body: JSON.stringify({ error: `Nenhum plano disponível para a sua agência neste destino/data. Verifique com a Coris se o destino ${destVal} está ativo para o login ${CORIS_LOGIN}.` }) };
+            console.error("Nenhum plano encontrado. Params:", planosParams);
+            return { 
+                statusCode: 400, 
+                headers, 
+                body: JSON.stringify({ 
+                    error: `Nenhum plano disponível para o destino ${destVal} (${tripType == 3 ? 'Multiviagem' : 'Lazer'}) com ${searchDays} dias. Verifique se a agência possui produtos ativos para este perfil.` 
+                }) 
+            };
         }
 
         // 3. Buscar Preços (BuscarPrecosIndividualV13)
+        // Nota: Para Multiviagem, o preço geralmente é fixo anual, mas enviamos 'days' da viagem para cálculo de cotação se necessário,
+        // mas a API geralmente ignora dias para produtos anuais ou usa a tabela fixa.
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': { val: CORIS_LOGIN, type: 'varchar' },
                 'senha': { val: CORIS_SENHA, type: 'varchar' },
                 'idplano': { val: p.id, type: 'int' },
-                'dias': { val: days, type: 'int' },
+                'dias': { val: days, type: 'int' }, // Aqui mantemos os dias reais da viagem para o cálculo (exceto se for multi, mas a API resolve)
                 'pax065': { val: brackets.pax065, type: 'int' },
                 'pax6675': { val: 0, type: 'int' },
                 'pax7685': { val: brackets.pax7685, type: 'int' }, 
@@ -166,11 +204,12 @@ exports.handler = async (event) => {
 
         const validPlans = plansWithPrice.filter(p => p !== null).sort((a, b) => a.originalPriceTotalBRL - b.originalPriceTotalBRL);
         
-        if (validPlans.length === 0) return { statusCode: 400, body: JSON.stringify({ error: 'Erro ao calcular preços.' }) };
+        if (validPlans.length === 0) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Erro ao calcular preços: Planos encontrados mas sem preço retornado.' }) };
 
-        return { statusCode: 200, body: JSON.stringify(validPlans) };
+        return { statusCode: 200, headers, body: JSON.stringify(validPlans) };
 
     } catch (error) {
-        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+        console.error("Server Error:", error);
+        return { statusCode: 500, headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ error: error.message }) };
     }
 };
