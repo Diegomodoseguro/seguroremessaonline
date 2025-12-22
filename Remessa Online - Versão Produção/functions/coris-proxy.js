@@ -26,8 +26,8 @@ const createSoapEnvelope = (method, params) => {
         paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
 
-    // Envelope SOAP Minificado (Uma única linha)
-    return `<?xml version="1.0" encoding="utf-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"><soapenv:Header/><soapenv:Body><tem:${method}><tem:strXML><![CDATA[<execute>${paramString}</execute>]]></tem:strXML></tem:${method}></soapenv:Body></soapenv:Envelope>`;
+    // Envelope SOAP Minificado (SEM DECLARAÇÃO XML <?xml ... ?> PARA IGUALAR AO POSTMAN)
+    return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"><soapenv:Header/><soapenv:Body><tem:${method}><tem:strXML><![CDATA[<execute>${paramString}</execute>]]></tem:strXML></tem:${method}></soapenv:Body></soapenv:Envelope>`;
 };
 
 const parseCorisXML = (xmlString, tagName) => {
@@ -122,9 +122,8 @@ exports.handler = async (event) => {
             'multi': { val: multiVal, type: 'int' }
         };
 
-        // GERAÇÃO DO ENVELOPE XML PARA LOG
         const requestXML = createSoapEnvelope('BuscarPlanosNovosV13', planosParams);
-        console.log("XML Enviado (Busca):", requestXML); // LOG CRÍTICO PARA DEBUG
+        console.log("XML Enviado (Busca):", requestXML);
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
@@ -133,11 +132,8 @@ exports.handler = async (event) => {
         });
         
         let planosText = await planosRes.text();
-        
-        // Decodificar entidades HTML pois a resposta vem "escapada"
         planosText = decodeHtmlEntities(planosText);
         
-        // Verifica erro de negócio da API
         const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
         if (erroMatch && erroMatch[1] !== '0') {
@@ -156,13 +152,12 @@ exports.handler = async (event) => {
                 statusCode: 400, 
                 headers, 
                 body: JSON.stringify({ 
-                    error: `Nenhum plano disponível na Coris para este perfil. Parâmetros técnicos enviados: ${debugInfo}. Verifique se o login ${CORIS_LOGIN} possui produtos ativos para estes parâmetros.` 
+                    error: `Nenhum plano disponível na Coris para este perfil. Parâmetros técnicos enviados: ${debugInfo}. XML Enviado: ${requestXML}` 
                 }) 
             };
         }
 
         // 3. Buscar Preços (BuscarPrecosIndividualV13)
-        // SEGUINDO ESTRUTURA EXATA DO POSTMAN COLLECTION "BuscarPrecosIndividualV13"
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': { val: CORIS_LOGIN, type: 'varchar' },
