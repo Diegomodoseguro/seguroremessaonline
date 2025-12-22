@@ -22,7 +22,7 @@ const createSoapEnvelope = (method, params) => {
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
-        // Importante: Sem espaços entre atributos, conforme padrão
+        // Importante: Sem espaços entre atributos
         paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
 
@@ -122,12 +122,14 @@ exports.handler = async (event) => {
             'multi': { val: multiVal, type: 'int' }
         };
 
-        console.log("Busca Params:", JSON.stringify(planosParams));
+        // GERAÇÃO DO ENVELOPE XML PARA LOG
+        const requestXML = createSoapEnvelope('BuscarPlanosNovosV13', planosParams);
+        console.log("XML Enviado (Busca):", requestXML); // LOG CRÍTICO PARA DEBUG
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPlanosNovosV13' },
-            body: createSoapEnvelope('BuscarPlanosNovosV13', planosParams)
+            body: requestXML
         });
         
         let planosText = await planosRes.text();
@@ -140,7 +142,7 @@ exports.handler = async (event) => {
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
         if (erroMatch && erroMatch[1] !== '0') {
              const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido';
-             console.error("Erro CORIS API:", msg);
+             console.error("Erro CORIS API (Busca):", msg);
              return { statusCode: 400, headers, body: JSON.stringify({ error: `Coris: ${msg}` }) };
         }
 
@@ -178,15 +180,15 @@ exports.handler = async (event) => {
                 'mortenat': { val: 0, type: 'int' },
                 'cancplus': { val: 0, type: 'int' },
                 'cancany': { val: 0, type: 'int' },
-                // SEGUINDO POSTMAN: formapagamento='FA' (anteriormente estava vazio)
+                // SEGUINDO POSTMAN: formapagamento='FA'
                 'formapagamento': { val: 'FA', type: 'varchar' }, 
                 'destino': { val: destVal, type: 'int' },
                 'categoria': { val: catVal, type: 'int' },
-                // SEGUINDO POSTMAN: codigodesconto='0' (anteriormente estava vazio)
+                // SEGUINDO POSTMAN: codigodesconto='0'
                 'codigodesconto': { val: '0', type: 'varchar' },
                 'danosmala': { val: 0, type: 'int' },
                 'pet': { val: 0, type: 'int' },
-                // SEGUINDO POSTMAN: p1, p2, p3 = '0' (anteriormente p2 estava vazio)
+                // SEGUINDO POSTMAN: p1, p2, p3 = '0'
                 'p1': { val: '0', type: 'varchar' },
                 'p2': { val: brackets.p2 > 0 ? brackets.p2.toString() : '0', type: 'varchar' },
                 'p3': { val: '0', type: 'varchar' } 
