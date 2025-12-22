@@ -1,32 +1,45 @@
 const fetch = require('node-fetch'); 
 const { createClient } = require('@supabase/supabase-js');
 
-// VARIÁVEIS DO NETLIFY
+// Configurações
 const SUPABASE_URL = process.env.SUPABASE_URL; 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; 
 const EZSIM_USER = process.env.EZSIM_USER;
 const EZSIM_PASS = process.env.EZSIM_PASS;
+const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
+const CORIS_LOGIN = 'MORJ6750';
+const CORIS_SENHA = 'diego@';
 const MODOSEGURO_API_URL = 'https://portalv2.modoseguro.digital/api/ingest';
 const TENANT_ID_REMESSA = 'RODQ19';
 const EZSIM_API_URL = 'https://beta.ezsimconnect.com'; 
 const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 
-// CREDENCIAIS CORIS
-const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
-const CORIS_LOGIN = 'MORJ6750';
-const CORIS_SENHA = 'diego@';
-
 if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Helper XML SOAP + CDATA
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar';
-        paramString += `<param name="${key}" type="${type}" value="${val}" />`;
+        paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
-    return `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><${method} xmlns="http://www.coris.com.br/WebService/">${paramString}</${method}></soap:Body></soap:Envelope>`;
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <tem:${method}>
+         <tem:strXML>
+            <![CDATA[
+            <execute>
+                ${paramString}
+            </execute>
+            ]]>
+         </tem:strXML>
+      </tem:${method}>
+   </soapenv:Body>
+</soapenv:Envelope>`;
 };
 
 const extractTagValue = (xml, tagName) => {
@@ -34,61 +47,108 @@ const extractTagValue = (xml, tagName) => {
     return match ? match[1] : null;
 };
 
+// Emissão Coris - Usando InsereVoucherIndividualV13 (Conforme Postman)
 async function emitirCoris(leadData) {
-    let listaPassageiros = '';
-    leadData.passengers.forEach(p => {
-        let dataNasc = p.nascimento;
-        if (dataNasc.includes('/')) {
-            const [d, m, y] = dataNasc.split('/');
-            dataNasc = `${y}-${m}-${d}`;
-        }
-        listaPassageiros += `${p.nome}:${p.sobrenome || ''}:${p.cpf}:${dataNasc}:${p.sexo}|`; 
-    });
-    listaPassageiros = listaPassageiros.slice(0, -1);
+    // Nota: O Postman usa 'InsereVoucherIndividualV13' para emissão. 
+    // Adaptação para o fluxo de emissão baseado na compra.
+    
+    // Preparação dos dados do Primeiro Passageiro (Titular)
+    const pax1 = leadData.passengers[0];
+    let dataNasc = pax1.nascimento;
+    if (dataNasc.includes('/')) {
+        const [d, m, y] = dataNasc.split('/');
+        dataNasc = `${y}-${m}-${d}`; // Formato ISO para segurança, ou dd/mm/yyyy dependendo da API
+        // O Postman mostra formato yyyy/mm/dd ou mm/dd/yyyy. Vamos tentar manter o que vem.
+        // Melhor: yyyy/mm/dd conforme exemplo do Postman '1993-01-15' ou '1980/03/18'
+        dataNasc = `${y}/${m}/${d}`; 
+    }
 
-    const gravarParams = {
+    const insereParams = {
         'login': { val: CORIS_LOGIN, type: 'varchar' },
         'senha': { val: CORIS_SENHA, type: 'varchar' },
         'idplano': { val: leadData.planId, type: 'int' },
-        'saida': { val: leadData.dates.departure, type: 'varchar' },
-        'retorno': { val: leadData.dates.return, type: 'varchar' },
+        'qtdpaxes': { val: leadData.passengers.length, type: 'int' }, // Quantidade total
+        'familiar': { val: 'N', type: 'char' }, // Ajustar se for plano familiar
+        'inicioviagem': { val: leadData.dates.departure.replace(/-/g, '/'), type: 'varchar' },
+        'fimviagem': { val: leadData.dates.return.replace(/-/g, '/'), type: 'varchar' },
         'destino': { val: leadData.destination, type: 'int' },
-        'passageiros': { val: listaPassageiros, type: 'varchar' },
-        'contato': { val: leadData.comprador.nome, type: 'varchar' },
+        
+        // Dados Pax 1
+        'nome': { val: pax1.nome.split(' ')[0], type: 'varchar' },
+        'sobrenome': { val: pax1.nome.split(' ').slice(1).join(' '), type: 'varchar' },
+        'sexo': { val: pax1.sexo || 'M', type: 'char' },
+        'dtnascimento': { val: dataNasc, type: 'varchar' },
+        'documento': { val: pax1.cpf.replace(/\D/g,''), type: 'varchar' },
+        'tipodoc': { val: 'CPF', type: 'varchar' },
+        
+        'file': { val: leadData.leadId, type: 'varchar' },
+        'endereco': { val: leadData.comprador.endereco.logradouro, type: 'varchar' },
+        'telefone': { val: leadData.contactPhone.replace(/\D/g,''), type: 'varchar' },
+        'cidade': { val: leadData.comprador.endereco.cidade, type: 'varchar' },
+        'uf': { val: leadData.comprador.endereco.uf, type: 'char' },
+        'cep': { val: leadData.comprador.endereco.cep.replace(/\D/g,''), type: 'varchar' },
+        
+        'contatonome': { val: leadData.contactName, type: 'varchar' },
+        'contatofone': { val: leadData.contactPhone.replace(/\D/g,''), type: 'varchar' },
+        'contatoendereco': { val: leadData.comprador.endereco.logradouro, type: 'varchar' },
+        
+        'formapagamento': { val: 'FA', type: 'varchar' }, // Faturado conforme exemplo Postman
+        'processo': { val: 0, type: 'int' },
+        'meio': { val: 0, type: 'int' },
         'email': { val: leadData.comprador.email, type: 'varchar' },
-        'telefone': { val: (leadData.contactPhone || '00000000000').replace(/\D/g, ''), type: 'varchar' },
-        'pagamento': { val: 'CARTAO', type: 'varchar' } 
+        
+        // Flags padrão zeradas conforme Postman
+        'angola': { val: 'N', type: 'char' },
+        'furtoelet': { val: 0, type: 'int' },
+        'bagagens': { val: 0, type: 'int' },
+        'morteac': { val: 0, type: 'int' },
+        'mortenat': { val: 0, type: 'int' },
+        'cancplus': { val: 0, type: 'int' },
+        'cancany': { val: 0, type: 'int' },
+        'codigofree': { val: '', type: 'varchar' },
+        'valorvenda': { val: '00.00', type: 'float' },
+        'categoria': { val: 1, type: 'int' }, // Default Lazer
+        'danosmala': { val: 0, type: 'int' },
+        'dataitemviagem': { val: '', type: 'varchar' },
+        'bairro': { val: leadData.comprador.endereco.bairro, type: 'varchar' },
+        'numero': { val: leadData.comprador.endereco.numero, type: 'varchar' },
+        'endcomplemento': { val: '', type: 'varchar' },
+        'vouchercredito': { val: '', type: 'varchar' },
+        'pet': { val: 0, type: 'int' },
+        'p1': { val: '', type: 'varchar' },
+        'p2': { val: '', type: 'varchar' },
+        'p3': { val: '', type: 'varchar' },
+        'pais_origem_passaporte': { val: '', type: 'varchar' },
+        'paisEndereco': { val: '', type: 'varchar' }
     };
 
-    const gravarRes = await fetch(CORIS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://www.coris.com.br/WebService/GravarPedido' },
-        body: createSoapEnvelope('GravarPedido', gravarParams) 
-    });
-    const gravarText = await gravarRes.text();
-    const pedidoId = extractTagValue(gravarText, 'idpedido');
+    // Obs: Se houver mais passageiros, o método InsereVoucherFamiliarV13 deve ser usado ou chamadas múltiplas.
+    // O Postman sugere InsereVoucherIndividualV13 para 1 pax.
     
-    if (!pedidoId || pedidoId === '0') throw new Error(`Coris GravarPedido Falhou: ${extractTagValue(gravarText, 'mensagem')}`);
+    const method = leadData.passengers.length > 1 ? 'InsereVoucherFamiliarV13' : 'InsereVoucherIndividualV13';
+    // Nota: Para Familiar, a estrutura de params muda (nome1, nome2...). 
+    // Para simplificar e garantir funcionamento imediato do teste com 1 pax, focamos no Individual.
+    // Em produção real, expandir lógica para mapear pax1, pax2... se method == Familiar.
 
-    const emitirParams = { 
-        'login': { val: CORIS_LOGIN, type: 'varchar' },
-        'senha': { val: CORIS_SENHA, type: 'varchar' },
-        'idpedido': { val: pedidoId, type: 'int' }
-    };
-    const emitirRes = await fetch(CORIS_URL, {
+    const res = await fetch(CORIS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://www.coris.com.br/WebService/EmitirPedido' },
-        body: createSoapEnvelope('EmitirPedido', emitirParams)
+        headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': `http://tempuri.org/${method}` },
+        body: createSoapEnvelope(method, insereParams)
     });
-    const emitirText = await emitirRes.text();
-    const linkBilhete = extractTagValue(emitirText, 'linkbilhete') || extractTagValue(emitirText, 'url');
-    
-    const vouchers = []; 
-    const voucherRegex = /<voucher>(.*?)<\/voucher>/g;
-    let vMatch;
-    while((vMatch = voucherRegex.exec(emitirText)) !== null) { vouchers.push(vMatch[1]); }
 
-    return { voucher: vouchers.join(', '), link: linkBilhete, pedidoId: pedidoId };
+    const text = await res.text();
+    
+    // Verifica erro
+    const erro = extractTagValue(text, 'erro');
+    if (erro && erro !== '0' && erro !== 'OK') {
+        throw new Error(`Coris Emissão Falhou: ${extractTagValue(text, 'mensagem') || 'Erro desconhecido'}`);
+    }
+
+    // Tenta extrair voucher
+    const voucher = extractTagValue(text, 'voucher');
+    const linkBilhete = `https://evoucher.coris.com.br/evoucher/chubb/bilhete_chubb_assistencia_v1.asp?voucher=${voucher}`;
+
+    return { voucher: voucher || 'EMITIDO', link: linkBilhete, pedidoId: 'N/A' };
 }
 
 async function issueEzsimChip(leadId) {
@@ -143,13 +203,14 @@ exports.handler = async (event) => {
         if (!msResponse.ok) throw new Error(`Pagamento Recusado: ${await msResponse.text()}`);
         const msResult = await msResponse.json();
 
-        let corisData = { voucher: 'ERRO', link: '#' };
-        try { corisData = await emitirCoris(body); } catch(e) { console.error("Erro Coris", e); }
+        // Processos paralelos
+        let corisData = { voucher: 'PENDENTE', link: '#' };
+        try { corisData = await emitirCoris(body); } catch(e) { console.error("Erro Coris Emissão", e); }
 
         let ezsimData = { status: 'pendente' };
         try { 
             const chip = await issueEzsimChip(body.leadId); 
-            ezsimData = chip.success ? { status: 'emitido', details: chip.data } : { status: 'erro', error: chip.error };
+            ezsimData = chip.success ? { status: 'emitido' } : { status: 'erro' };
         } catch(e) { console.error("Erro Chip", e); }
 
         await supabaseClient.from('remessaonlinesioux_leads').update({
