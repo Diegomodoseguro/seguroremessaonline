@@ -5,35 +5,38 @@ const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = 'MORJ6750';
 const CORIS_SENHA = 'diego@';
 
-// Helper: Decode HTML Entities (ESSENCIAL para respostas SOAP string)
-const decodeHtmlEntities = (text) => {
-    if (!text) return '';
-    return text
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'");
-};
-
-// Helper: Gera XML Compacto (Sem espaços que quebram a API)
+// Helper: Gera XML IDÊNTICO ao Postman (Com quebras de linha no CDATA)
 const createSoapEnvelope = (method, params) => {
-    let paramString = '';
+    let paramLines = '';
+    
+    // Monta cada linha de parâmetro com quebra de linha \n
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
-        // Importante: Sem espaços entre atributos
-        paramString += `<param name='${key}' type='${type}' value='${val}' />`;
+        // Nota: Espaços exatos conforme padrão visual do Postman
+        paramLines += `<param name='${key}' type='${type}' value='${val}' />\n`;
     }
 
-    // Envelope SOAP Minificado (SEM DECLARAÇÃO XML <?xml ... ?> PARA IGUALAR AO POSTMAN)
-    return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"><soapenv:Header/><soapenv:Body><tem:${method}><tem:strXML><![CDATA[<execute>${paramString}</execute>]]></tem:strXML></tem:${method}></soapenv:Body></soapenv:Envelope>`;
+    // Estrutura SOAP com CDATA e quebras de linha
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' xmlns:tem='http://tempuri.org/'>
+<soapenv:Header/>
+<soapenv:Body>
+<tem:${method}>
+<tem:strXML>
+<![CDATA[
+<execute>
+${paramLines}</execute>
+]]>
+</tem:strXML>
+</tem:${method}>
+</soapenv:Body>
+</soapenv:Envelope>`;
 };
 
 const parseCorisXML = (xmlString, tagName) => {
     const results = [];
-    // Regex ajustada para ser case insensitive e pegar o conteúdo
-    const regex = new RegExp(`<${tagName}>(.*?)</${tagName}>`, 'gi');
+    const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'g');
     let match;
     while ((match = regex.exec(xmlString)) !== null) {
         const content = match[1];
@@ -61,24 +64,13 @@ const extractCoverageValue = (planName) => {
 };
 
 exports.handler = async (event) => {
-    // Permitir CORS
-    const headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS'
-    };
-
-    if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, headers, body: '' };
-    }
-
-    if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: 'Method Not Allowed' };
+    if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
 
     try {
         const { destination, days, ages, tripType } = JSON.parse(event.body); 
 
-        // 1. Validação e Preparação dos Dados
-        if (!destination || !days) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Dados incompletos (Destino ou Dias faltando).' }) };
+        // Validação
+        if (!destination || !days) return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos.' }) };
 
         const brackets = { pax065: 0, pax7685: 0, pax86100: 0, p2: 0 };
         (ages || []).forEach(ageStr => {
@@ -90,80 +82,55 @@ exports.handler = async (event) => {
         });
         if ((ages || []).length === 0) brackets.pax065 = 1;
 
-        let homeVal = 0;
-        let multiVal = 0;
-        let destVal = parseInt(destination);
-        let catVal = 1; // Default: Lazer (1)
-        let searchDays = parseInt(days); // Garante inteiro
+        let homeVal = 0, multiVal = 0, destVal = parseInt(destination), catVal = 1;
+        
+        // Regras de Negócio Coris
+        if (tripType == '3') { homeVal = 1; catVal = 3; } // Multiviagem
+        else if (tripType == '4') { homeVal = 22; destVal = 2; catVal = 5; } // Receptivo
+        else if (tripType == '2') { catVal = 2; } // Intercambio
 
-        // Lógica de Tipo de Viagem (Conforme Manual V5)
-        if (tripType == '3') { // Multiviagem (Anual)
-            homeVal = 1; 
-            catVal = 3; 
-            searchDays = 365; // Fixo para anual
-            multiVal = 30;    // Padrão de mercado para multi
-        }
-        else if (tripType == '4') { // Receptivo
-            homeVal = 22; 
-            destVal = 2; // Força destino Brasil conforme manual
-            catVal = 5; 
-        }
-        else if (tripType == '2') { // Intercâmbio
-            catVal = 2; 
-        }
-
-        // 2. Buscar Planos (BuscarPlanosNovosV13)
+        // 1. BUSCAR PLANOS
         const planosParams = {
             'login': { val: CORIS_LOGIN, type: 'varchar' },
             'senha': { val: CORIS_SENHA, type: 'varchar' },
             'destino': { val: destVal, type: 'int' },
-            'vigencia': { val: searchDays, type: 'int' },
+            'vigencia': { val: days, type: 'int' },
             'home': { val: homeVal, type: 'int' },
             'multi': { val: multiVal, type: 'int' }
         };
 
-        const requestXML = createSoapEnvelope('BuscarPlanosNovosV13', planosParams);
-        console.log("XML Enviado (Busca):", requestXML);
+        console.log(`[CORIS] Request Planos: Dest=${destVal}, Dias=${days}`);
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPlanosNovosV13' },
-            body: requestXML
+            body: createSoapEnvelope('BuscarPlanosNovosV13', planosParams)
         });
         
-        let planosText = await planosRes.text();
-        planosText = decodeHtmlEntities(planosText);
+        const planosText = await planosRes.text();
         
+        // Diagnóstico de Erro da API
         const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
         if (erroMatch && erroMatch[1] !== '0') {
              const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido';
-             console.error("Erro CORIS API (Busca):", msg);
-             return { statusCode: 400, headers, body: JSON.stringify({ error: `Coris: ${msg}` }) };
+             console.error("Erro CORIS:", msg);
+             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg}` }) };
         }
 
         let planos = parseCorisXML(planosText, 'buscaPlanos');
 
         if (planos.length === 0) {
-            const debugInfo = `Destino=${destVal}, Dias=${searchDays}, Home=${homeVal}, Multi=${multiVal}, Cat=${catVal}`;
-            console.error(`Nenhum plano encontrado. Params: ${debugInfo}`);
-            
-            return { 
-                statusCode: 400, 
-                headers, 
-                body: JSON.stringify({ 
-                    error: `Nenhum plano disponível na Coris para este perfil. Parâmetros técnicos enviados: ${debugInfo}. XML Enviado: ${requestXML}` 
-                }) 
-            };
+            return { statusCode: 400, body: JSON.stringify({ error: `Nenhum plano disponível. Verifique se o destino (${destVal}) e dias (${days}) são válidos para sua agência.` }) };
         }
 
-        // 3. Buscar Preços (BuscarPrecosIndividualV13)
+        // 2. BUSCAR PREÇOS
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': { val: CORIS_LOGIN, type: 'varchar' },
                 'senha': { val: CORIS_SENHA, type: 'varchar' },
                 'idplano': { val: p.id, type: 'int' },
-                'dias': { val: parseInt(days), type: 'int' },
+                'dias': { val: days, type: 'int' },
                 'pax065': { val: brackets.pax065, type: 'int' },
                 'pax6675': { val: 0, type: 'int' },
                 'pax7685': { val: brackets.pax7685, type: 'int' }, 
@@ -175,17 +142,14 @@ exports.handler = async (event) => {
                 'mortenat': { val: 0, type: 'int' },
                 'cancplus': { val: 0, type: 'int' },
                 'cancany': { val: 0, type: 'int' },
-                // SEGUINDO POSTMAN: formapagamento='FA'
-                'formapagamento': { val: 'FA', type: 'varchar' }, 
+                'formapagamento': { val: '', type: 'varchar' },
                 'destino': { val: destVal, type: 'int' },
                 'categoria': { val: catVal, type: 'int' },
-                // SEGUINDO POSTMAN: codigodesconto='0'
-                'codigodesconto': { val: '0', type: 'varchar' },
+                'codigodesconto': { val: '', type: 'varchar' },
                 'danosmala': { val: 0, type: 'int' },
                 'pet': { val: 0, type: 'int' },
-                // SEGUINDO POSTMAN: p1, p2, p3 = '0'
                 'p1': { val: '0', type: 'varchar' },
-                'p2': { val: brackets.p2 > 0 ? brackets.p2.toString() : '0', type: 'varchar' },
+                'p2': { val: brackets.p2.toString(), type: 'varchar' },
                 'p3': { val: '0', type: 'varchar' } 
             };
 
@@ -195,16 +159,16 @@ exports.handler = async (event) => {
                 body: createSoapEnvelope('BuscarPrecosIndividualV13', precoParams)
             });
 
-            let precoText = await precoRes.text();
-            precoText = decodeHtmlEntities(precoText); 
-
+            const precoText = await precoRes.text();
             const precoData = parseCorisXML(precoText, 'buscaPrecos')[0];
 
             if (precoData && (precoData.precoindividualrs || precoData.totalrs)) {
                 let rawPrice = precoData.totalrs ? precoData.totalrs : precoData.precoindividualrs;
                 const totalBRL = parseFloat(rawPrice.replace(/\./g, '').replace(',', '.'));
+                
                 const coverage = extractCoverageValue(p.nome);
                 const dmh = coverage > 0 ? `USD ${coverage.toLocaleString('pt-BR')}` : p.nome;
+                
                 let bagagem = 'USD 1.000';
                 if(coverage >= 60000) bagagem = 'USD 1.500';
                 if(coverage >= 100000) bagagem = 'USD 2.000';
@@ -223,12 +187,11 @@ exports.handler = async (event) => {
 
         const validPlans = plansWithPrice.filter(p => p !== null).sort((a, b) => a.originalPriceTotalBRL - b.originalPriceTotalBRL);
         
-        if (validPlans.length === 0) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Erro ao calcular preços: Planos encontrados mas sem preço retornado.' }) };
+        if (validPlans.length === 0) return { statusCode: 400, body: JSON.stringify({ error: 'Erro ao calcular preços dos planos.' }) };
 
-        return { statusCode: 200, headers, body: JSON.stringify(validPlans) };
+        return { statusCode: 200, body: JSON.stringify(validPlans) };
 
     } catch (error) {
-        console.error("Server Error:", error);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
     }
 };
