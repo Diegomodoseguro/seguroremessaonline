@@ -1,26 +1,24 @@
 const fetch = require('node-fetch'); 
 const { createClient } = require('@supabase/supabase-js');
 
-// --- CREDENCIAIS CORIS (HARDCODED PARA TESTE/PRODUÇÃO IMEDIATA) ---
-const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
-const CORIS_LOGIN = 'MORJ6750';
-const CORIS_SENHA = 'diego@';
-
-// --- OUTRAS CREDENCIAIS (Via Env Vars do Netlify) ---
+// VARIÁVEIS DO NETLIFY
 const SUPABASE_URL = process.env.SUPABASE_URL; 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; 
 const EZSIM_USER = process.env.EZSIM_USER;
 const EZSIM_PASS = process.env.EZSIM_PASS;
-
 const MODOSEGURO_API_URL = 'https://portalv2.modoseguro.digital/api/ingest';
 const TENANT_ID_REMESSA = 'RODQ19';
 const EZSIM_API_URL = 'https://beta.ezsimconnect.com'; 
 const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 
-if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO CRÍTICO: Variáveis Supabase ausentes.");
+// CREDENCIAIS CORIS
+const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
+const CORIS_LOGIN = 'MORJ6750';
+const CORIS_SENHA = 'diego@';
+
+if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Helper XML com Tipagem (IMPORTANTE)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
@@ -36,7 +34,6 @@ const extractTagValue = (xml, tagName) => {
     return match ? match[1] : null;
 };
 
-// Emissão Coris (Tipada)
 async function emitirCoris(leadData) {
     let listaPassageiros = '';
     leadData.passengers.forEach(p => {
@@ -96,13 +93,12 @@ async function emitirCoris(leadData) {
 
 async function issueEzsimChip(leadId) {
     try {
-        const tokenResp = await fetch(`${EZSIM_API_URL}/auth/v1/token?grant_type=password`, {
+        const authRes = await fetch(`${EZSIM_API_URL}/auth/v1/token?grant_type=password`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: EZSIM_USER, password: EZSIM_PASS })
         });
-        const authData = await tokenResp.json();
+        const authData = await authRes.json();
         const token = authData.access_token;
-        
         if(!token) return { success: false, error: "Auth falhou" };
         
         const listRes = await fetch(`${EZSIM_API_URL}/rest/v1/price_list?select=*`, {
@@ -111,8 +107,6 @@ async function issueEzsimChip(leadId) {
         const bundles = await listRes.json();
         const target = bundles.find(b => b.description === TARGET_PLAN_NAME || b.name === TARGET_PLAN_NAME) || bundles[0];
         
-        if(!target) return { success: false, error: "Plano não encontrado" };
-
         const cartRes = await fetch(`${EZSIM_API_URL}/rest/v1/cart`, {
             method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
             body: JSON.stringify({ organization_bundle_id: target.id, quantity: 1, reference: leadId })
@@ -122,7 +116,6 @@ async function issueEzsimChip(leadId) {
             method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
             body: JSON.stringify({ reference: leadId })
         });
-        
         return { success: true, data: await orderRes.json() };
     } catch (e) { return { success: false, error: e.message }; }
 }
@@ -150,27 +143,25 @@ exports.handler = async (event) => {
         if (!msResponse.ok) throw new Error(`Pagamento Recusado: ${await msResponse.text()}`);
         const msResult = await msResponse.json();
 
-        // Processos paralelos de emissão
-        let corisData = { voucher: 'PENDENTE_ERRO', link: '#' };
+        let corisData = { voucher: 'ERRO', link: '#' };
         try { corisData = await emitirCoris(body); } catch(e) { console.error("Erro Coris", e); }
 
-        let ezsimStatus = 'pendente';
+        let ezsimData = { status: 'pendente' };
         try { 
             const chip = await issueEzsimChip(body.leadId); 
-            ezsimStatus = chip.success ? 'emitido' : 'erro';
+            ezsimData = chip.success ? { status: 'emitido', details: chip.data } : { status: 'erro', error: chip.error };
         } catch(e) { console.error("Erro Chip", e); }
 
         await supabaseClient.from('remessaonlinesioux_leads').update({
             status: 'venda_concluida', coris_voucher: corisData.voucher, link_bilhete: corisData.link,
             stripe_payment_intent_id: msResult.stripe?.id || 'processed',
             valor_final_brl: body.amountBRL, plano_escolhido: body.planName, passageiros_info: JSON.stringify(body.passageiros),
-            recovery_notes: `Chip: ${ezsimStatus}`
+            recovery_notes: `Chip: ${ezsimData.status}`
         }).eq('id', body.leadId);
 
         return { statusCode: 200, body: JSON.stringify({ success: true, link: corisData.link }) };
 
     } catch (error) {
-        console.error(error);
         if (body.leadId) await supabaseClient.from('remessaonlinesioux_leads').update({ status: 'pagamento_falhou', last_error_message: error.message }).eq('id', body.leadId);
         return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
     }
