@@ -17,15 +17,28 @@ const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Helper XML Compacto (SEM DECLARAÇÃO XML <?xml ... ?> PARA IGUALAR AO POSTMAN)
+// Helper XML Idêntico ao Proxy (Com quebras de linha)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar';
-        paramString += `<param name='${key}' type='${type}' value='${val}' />`;
+        paramString += `<param name='${key}' type='${type}' value='${val}' />\n`;
     }
-    return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"><soapenv:Header/><soapenv:Body><tem:${method}><tem:strXML><![CDATA[<execute>${paramString}</execute>]]></tem:strXML></tem:${method}></soapenv:Body></soapenv:Envelope>`;
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+<soapenv:Header/>
+<soapenv:Body>
+<tem:${method}>
+<tem:strXML>
+<![CDATA[
+<execute>
+${paramString}</execute>
+]]>
+</tem:strXML>
+</tem:${method}>
+</soapenv:Body>
+</soapenv:Envelope>`;
 };
 
 const extractTagValue = (xml, tagName) => {
@@ -33,7 +46,6 @@ const extractTagValue = (xml, tagName) => {
     return match ? match[1] : null;
 };
 
-// Emissão Coris
 async function emitirCoris(leadData) {
     const pax1 = leadData.passengers[0];
     let dataNasc = pax1.nascimento;
@@ -85,11 +97,13 @@ async function emitirCoris(leadData) {
         'bairro': { val: leadData.comprador.endereco.bairro, type: 'varchar' },
         'numero': { val: leadData.comprador.endereco.numero, type: 'varchar' },
         'endcomplemento': { val: '', type: 'varchar' },
-        'vouchercredito': { val: '0', type: 'varchar' },
+        'vouchercredito': { val: '', type: 'varchar' },
         'pet': { val: 0, type: 'int' },
-        'p1': { val: '0', type: 'varchar' },
-        'p2': { val: '0', type: 'varchar' },
-        'p3': { val: '0', type: 'varchar' }
+        'p1': { val: '', type: 'varchar' },
+        'p2': { val: '', type: 'varchar' },
+        'p3': { val: '', type: 'varchar' },
+        'pais_origem_passaporte': { val: '', type: 'varchar' },
+        'paisEndereco': { val: '', type: 'varchar' }
     };
 
     const method = leadData.passengers.length > 1 ? 'InsereVoucherFamiliarV13' : 'InsereVoucherIndividualV13';
