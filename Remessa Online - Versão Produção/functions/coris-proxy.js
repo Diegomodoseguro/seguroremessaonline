@@ -5,6 +5,17 @@ const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = 'MORJ6750';
 const CORIS_SENHA = 'diego@';
 
+// Helper: Decode HTML Entities (ESSENCIAL para respostas SOAP string)
+const decodeHtmlEntities = (text) => {
+    if (!text) return '';
+    return text
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'");
+};
+
 // Helper: Gera XML Compacto (Sem espaços que quebram a API)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
@@ -21,7 +32,8 @@ const createSoapEnvelope = (method, params) => {
 
 const parseCorisXML = (xmlString, tagName) => {
     const results = [];
-    const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'g');
+    // Regex ajustada para ser case insensitive e pegar o conteúdo
+    const regex = new RegExp(`<${tagName}>(.*?)</${tagName}>`, 'gi');
     let match;
     while ((match = regex.exec(xmlString)) !== null) {
         const content = match[1];
@@ -49,7 +61,7 @@ const extractCoverageValue = (planName) => {
 };
 
 exports.handler = async (event) => {
-    // Permitir CORS para testes locais e produção
+    // Permitir CORS
     const headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
@@ -79,23 +91,16 @@ exports.handler = async (event) => {
         if ((ages || []).length === 0) brackets.pax065 = 1;
 
         let homeVal = 0, multiVal = 0, destVal = parseInt(destination), catVal = 1;
-        let searchDays = days; // Vigência padrão para a busca é a duração da viagem
+        let searchDays = days; 
 
-        // Lógica de Tipo de Viagem Corrigida
+        // Lógica de Tipo de Viagem
         if (tripType == '3') { // Multiviagem (Anual)
-            homeVal = 1; 
-            catVal = 3;
-            // Para planos anuais, a vigência de busca deve ser 365, não os dias da primeira viagem
-            searchDays = 365; 
-            // Para planos anuais, multi deve ser 30 (padrão de mercado) para retornar os planos corretos
-            multiVal = 30; 
+            homeVal = 1; catVal = 3; searchDays = 365; multiVal = 30; 
         }
         else if (tripType == '4') { // Receptivo
-            homeVal = 22; 
-            destVal = 2; // Força Brasil
-            catVal = 5; 
+            homeVal = 22; destVal = 2; catVal = 5; 
         }
-        else if (tripType == '2') { // Intercâmbio/Estudante
+        else if (tripType == '2') { // Intercâmbio
             catVal = 2; 
         }
 
@@ -104,12 +109,12 @@ exports.handler = async (event) => {
             'login': { val: CORIS_LOGIN, type: 'varchar' },
             'senha': { val: CORIS_SENHA, type: 'varchar' },
             'destino': { val: destVal, type: 'int' },
-            'vigencia': { val: searchDays, type: 'int' }, // Usa a vigência ajustada
+            'vigencia': { val: searchDays, type: 'int' },
             'home': { val: homeVal, type: 'int' },
             'multi': { val: multiVal, type: 'int' }
         };
 
-        console.log("Busca Params:", JSON.stringify(planosParams)); // Log para debug no Netlify
+        console.log("Busca Params:", JSON.stringify(planosParams));
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
@@ -117,21 +122,24 @@ exports.handler = async (event) => {
             body: createSoapEnvelope('BuscarPlanosNovosV13', planosParams)
         });
         
-        const planosText = await planosRes.text();
+        let planosText = await planosRes.text();
+        
+        // --- CRÍTICO: Decodificar entidades HTML pois a resposta vem "escapada" ---
+        planosText = decodeHtmlEntities(planosText);
         
         // Verifica erro de negócio da API
         const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
         if (erroMatch && erroMatch[1] !== '0') {
              const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido';
-             console.error("Erro CORIS API:", msg, "Params:", planosParams);
+             console.error("Erro CORIS API:", msg);
              return { statusCode: 400, headers, body: JSON.stringify({ error: `Coris: ${msg}` }) };
         }
 
         let planos = parseCorisXML(planosText, 'buscaPlanos');
 
         if (planos.length === 0) {
-            console.error("Nenhum plano encontrado. Params:", planosParams);
+            console.error("Nenhum plano encontrado. XML Parcial:", planosText.substring(0, 200));
             return { 
                 statusCode: 400, 
                 headers, 
@@ -142,14 +150,12 @@ exports.handler = async (event) => {
         }
 
         // 3. Buscar Preços (BuscarPrecosIndividualV13)
-        // Nota: Para Multiviagem, o preço geralmente é fixo anual, mas enviamos 'days' da viagem para cálculo de cotação se necessário,
-        // mas a API geralmente ignora dias para produtos anuais ou usa a tabela fixa.
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': { val: CORIS_LOGIN, type: 'varchar' },
                 'senha': { val: CORIS_SENHA, type: 'varchar' },
                 'idplano': { val: p.id, type: 'int' },
-                'dias': { val: days, type: 'int' }, // Aqui mantemos os dias reais da viagem para o cálculo (exceto se for multi, mas a API resolve)
+                'dias': { val: days, type: 'int' },
                 'pax065': { val: brackets.pax065, type: 'int' },
                 'pax6675': { val: 0, type: 'int' },
                 'pax7685': { val: brackets.pax7685, type: 'int' }, 
@@ -178,7 +184,9 @@ exports.handler = async (event) => {
                 body: createSoapEnvelope('BuscarPrecosIndividualV13', precoParams)
             });
 
-            const precoText = await precoRes.text();
+            let precoText = await precoRes.text();
+            precoText = decodeHtmlEntities(precoText); // Decodificar também a resposta de preços
+
             const precoData = parseCorisXML(precoText, 'buscaPrecos')[0];
 
             if (precoData && (precoData.precoindividualrs || precoData.totalrs)) {
@@ -210,6 +218,6 @@ exports.handler = async (event) => {
 
     } catch (error) {
         console.error("Server Error:", error);
-        return { statusCode: 500, headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
     }
 };
