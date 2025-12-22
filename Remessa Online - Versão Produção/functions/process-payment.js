@@ -1,14 +1,17 @@
 const fetch = require('node-fetch'); 
 const { createClient } = require('@supabase/supabase-js');
 
-// Configs
+// --- CREDENCIAIS CORIS (HARDCODED PARA TESTE/PRODUÇÃO IMEDIATA) ---
+const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
+const CORIS_LOGIN = 'MORJ6750';
+const CORIS_SENHA = 'diego@';
+
+// --- OUTRAS CREDENCIAIS (Via Env Vars do Netlify) ---
 const SUPABASE_URL = process.env.SUPABASE_URL; 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; 
 const EZSIM_USER = process.env.EZSIM_USER;
 const EZSIM_PASS = process.env.EZSIM_PASS;
-const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
-const CORIS_LOGIN = process.env.CORIS_LOGIN;
-const CORIS_SENHA = process.env.CORIS_SENHA;
+
 const MODOSEGURO_API_URL = 'https://portalv2.modoseguro.digital/api/ingest';
 const TENANT_ID_REMESSA = 'RODQ19';
 const EZSIM_API_URL = 'https://beta.ezsimconnect.com'; 
@@ -91,56 +94,54 @@ async function emitirCoris(leadData) {
     return { voucher: vouchers.join(', '), link: linkBilhete, pedidoId: pedidoId };
 }
 
-async function getEzsimToken() {
+async function issueEzsimChip(leadId) {
     try {
-        const response = await fetch(`${EZSIM_API_URL}/auth/v1/token?grant_type=password`, {
+        const tokenResp = await fetch(`${EZSIM_API_URL}/auth/v1/token?grant_type=password`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: EZSIM_USER, password: EZSIM_PASS })
         });
-        const data = await response.json();
-        return data.access_token;
-    } catch (error) { return null; }
-}
-async function issueEzsimChip(leadId) {
-    try {
-        const token = await getEzsimToken();
+        const authData = await tokenResp.json();
+        const token = authData.access_token;
+        
         if(!token) return { success: false, error: "Auth falhou" };
-        const bundleResponse = await fetch(`${EZSIM_API_URL}/rest/v1/price_list?select=*`, {
+        
+        const listRes = await fetch(`${EZSIM_API_URL}/rest/v1/price_list?select=*`, {
             method: 'GET', headers: { 'Authorization': `Bearer ${token}` }
         });
-        const bundles = await bundleResponse.json();
+        const bundles = await listRes.json();
         const target = bundles.find(b => b.description === TARGET_PLAN_NAME || b.name === TARGET_PLAN_NAME) || bundles[0];
+        
         if(!target) return { success: false, error: "Plano não encontrado" };
+
         const cartRes = await fetch(`${EZSIM_API_URL}/rest/v1/cart`, {
             method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
             body: JSON.stringify({ organization_bundle_id: target.id, quantity: 1, reference: leadId })
         });
-        if(!cartRes.ok) throw new Error("Falha carrinho");
+        
         const orderRes = await fetch(`${EZSIM_API_URL}/rest/v1/sales_order`, {
             method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
             body: JSON.stringify({ reference: leadId })
         });
-        const orderData = await orderRes.json();
-        return { success: true, data: orderData };
+        
+        return { success: true, data: await orderRes.json() };
     } catch (e) { return { success: false, error: e.message }; }
 }
 
 exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
     const body = JSON.parse(event.body);
-    const { paymentMethodId, leadId, planId, amountBRL, comprador, passageiros, planName, dates, destination, contactPhone } = body;
 
     try {
-        const amountInCents = Math.round(amountBRL * 100);
+        const amountInCents = Math.round(body.amountBRL * 100);
         const msPayload = {
-            tenant_id: TENANT_ID_REMESSA, type: "stripe", cliente: comprador,
-            enderecos: [comprador.endereco],
+            tenant_id: TENANT_ID_REMESSA, type: "stripe", cliente: body.comprador,
+            enderecos: [body.comprador.endereco],
             pagamento: {
-                amount_cents: amountInCents, currency: "brl", descricao: `Seguro Coris - ${planName}`,
-                receipt_email: comprador.email, metadata: { lead_id: leadId, origem: "lp_remessa" },
-                payment_method_id: paymentMethodId 
+                amount_cents: amountInCents, currency: "brl", descricao: `Seguro Coris - ${body.planName}`,
+                receipt_email: body.comprador.email, metadata: { lead_id: body.leadId, origem: "lp_remessa" },
+                payment_method_id: body.paymentMethodId 
             },
-            passageiros_extra: passageiros
+            passageiros_extra: body.passageiros
         };
 
         const msResponse = await fetch(`${MODOSEGURO_API_URL}?tenant_id=${TENANT_ID_REMESSA}&topic=venda_stripe&source=api_backend`, {
@@ -149,27 +150,28 @@ exports.handler = async (event) => {
         if (!msResponse.ok) throw new Error(`Pagamento Recusado: ${await msResponse.text()}`);
         const msResult = await msResponse.json();
 
-        let corisData = { voucher: 'ERRO', link: '#' };
-        try { corisData = await emitirCoris({ leadId, planId, destination, passengers: passageiros, comprador, contactPhone, dates }); } catch(e) { console.error("Erro Coris", e); }
+        // Processos paralelos de emissão
+        let corisData = { voucher: 'PENDENTE_ERRO', link: '#' };
+        try { corisData = await emitirCoris(body); } catch(e) { console.error("Erro Coris", e); }
 
-        let ezsimData = { status: 'pendente' };
-        try {
-            const chip = await issueEzsimChip(leadId);
-            ezsimData = chip.success ? { status: 'emitido', details: chip.data } : { status: 'erro', error: chip.error };
+        let ezsimStatus = 'pendente';
+        try { 
+            const chip = await issueEzsimChip(body.leadId); 
+            ezsimStatus = chip.success ? 'emitido' : 'erro';
         } catch(e) { console.error("Erro Chip", e); }
 
         await supabaseClient.from('remessaonlinesioux_leads').update({
-            status: 'venda_concluida', coris_voucher: corisData.voucher, coris_pedido_id: corisData.pedidoId,
-            link_bilhete: corisData.link, stripe_payment_intent_id: msResult.stripe?.id || 'processed',
-            valor_final_brl: amountBRL, plano_escolhido: planName, passageiros_info: JSON.stringify(passageiros),
-            recovery_notes: `Chip: ${ezsimData.status}`
-        }).eq('id', leadId);
+            status: 'venda_concluida', coris_voucher: corisData.voucher, link_bilhete: corisData.link,
+            stripe_payment_intent_id: msResult.stripe?.id || 'processed',
+            valor_final_brl: body.amountBRL, plano_escolhido: body.planName, passageiros_info: JSON.stringify(body.passageiros),
+            recovery_notes: `Chip: ${ezsimStatus}`
+        }).eq('id', body.leadId);
 
         return { statusCode: 200, body: JSON.stringify({ success: true, link: corisData.link }) };
 
     } catch (error) {
         console.error(error);
-        if (leadId) await supabaseClient.from('remessaonlinesioux_leads').update({ status: 'pagamento_falhou', last_error_message: error.message }).eq('id', leadId);
+        if (body.leadId) await supabaseClient.from('remessaonlinesioux_leads').update({ status: 'pagamento_falhou', last_error_message: error.message }).eq('id', body.leadId);
         return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
     }
 };
