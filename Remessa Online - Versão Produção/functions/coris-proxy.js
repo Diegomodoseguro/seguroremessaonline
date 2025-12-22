@@ -5,7 +5,8 @@ const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = 'MORJ6750';
 const CORIS_SENHA = 'diego@';
 
-// Helper: Gera o XML exatamente como no Postman (CDATA dentro de strXML)
+// Helper: Gera XML EXATAMENTE como no Postman (CDATA dentro de strXML)
+// IMPORTANTE: O namespace 'tem' deve estar definido no envelope.
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     
@@ -13,11 +14,11 @@ const createSoapEnvelope = (method, params) => {
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
+        // Formato: <param name='nome' type='tipo' value='valor' />
         paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
 
-    // Monta a estrutura SOAP + CDATA
-    // xmlns:tem="http://tempuri.org/" é fundamental segundo o Postman
+    // Estrutura SOAP com CDATA conforme Postman
     return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
    <soapenv:Header/>
@@ -43,6 +44,7 @@ const parseCorisXML = (xmlString, tagName) => {
     while ((match = regex.exec(xmlString)) !== null) {
         const content = match[1];
         const item = {};
+        // Regex ajustado para pegar campos simples dentro das tags de retorno
         const fieldRegex = /<(\w+)>([^<]*)<\/\1>/g;
         let fieldMatch;
         while ((fieldMatch = fieldRegex.exec(content)) !== null) {
@@ -88,7 +90,7 @@ exports.handler = async (event) => {
         });
         if ((ages || []).length === 0) brackets.pax065 = 1;
 
-        // Configuração
+        // Configuração de Parâmetros
         let homeVal = 0, multiVal = 0, destVal = parseInt(destination), catVal = 1;
         if (tripType == '3') { homeVal = 1; catVal = 3; }
         else if (tripType == '4') { homeVal = 22; destVal = 2; catVal = 5; }
@@ -106,13 +108,13 @@ exports.handler = async (event) => {
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPlanosNovosV13' },
+            headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPlanosNovosV13' }, // SOAPAction pode precisar ser apenas a URL base ou vazia dependendo do ASMX, mas tempuri é padrão.
             body: createSoapEnvelope('BuscarPlanosNovosV13', planosParams)
         });
         
         const planosText = await planosRes.text();
         
-        // Verifica erros
+        // Verifica erros na resposta XML
         const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
         if (erroMatch && erroMatch[1] !== '0') {
