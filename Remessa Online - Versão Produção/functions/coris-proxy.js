@@ -1,24 +1,21 @@
 const fetch = require('node-fetch');
 
-// --- CREDENCIAIS ---
+// --- CREDENCIAIS OFICIAIS (Hardcoded para garantir funcionamento) ---
 const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = 'MORJ6750';
 const CORIS_SENHA = 'diego@';
 
-// Helper: Gera XML EXATAMENTE como no Postman (CDATA dentro de strXML)
-// IMPORTANTE: O namespace 'tem' deve estar definido no envelope.
+// Helper: Gera XML exatamente como no Postman (CDATA dentro de strXML)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
-    
-    // Constrói os <param> internos
+    // Monta os parâmetros internos
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
-        // Formato: <param name='nome' type='tipo' value='valor' />
         paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
 
-    // Estrutura SOAP com CDATA conforme Postman
+    // Estrutura SOAP exata do Postman
     return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
    <soapenv:Header/>
@@ -36,7 +33,7 @@ const createSoapEnvelope = (method, params) => {
 </soapenv:Envelope>`;
 };
 
-// Parser para ler a resposta (que também pode vir dentro de um CDATA ou XML puro)
+// Parser de XML
 const parseCorisXML = (xmlString, tagName) => {
     const results = [];
     const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'g');
@@ -44,7 +41,6 @@ const parseCorisXML = (xmlString, tagName) => {
     while ((match = regex.exec(xmlString)) !== null) {
         const content = match[1];
         const item = {};
-        // Regex ajustado para pegar campos simples dentro das tags de retorno
         const fieldRegex = /<(\w+)>([^<]*)<\/\1>/g;
         let fieldMatch;
         while ((fieldMatch = fieldRegex.exec(content)) !== null) {
@@ -57,7 +53,6 @@ const parseCorisXML = (xmlString, tagName) => {
 
 const extractCoverageValue = (planName) => {
     if (!planName) return 0;
-    // Tenta pegar valor numérico do nome (Ex: CORIS 60 -> 60000)
     let match = planName.match(/(\d{1,3})[.,]?(\d{3})?(\s*k|\s*mil)?/i);
     if (match) {
         let val = parseInt(match[1].replace(/[.,]/g, ''));
@@ -74,7 +69,7 @@ exports.handler = async (event) => {
     try {
         const { destination, days, ages, tripType } = JSON.parse(event.body); 
 
-        // Validação
+        // Validação básica
         if (!destination || !days) {
             return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos.' }) };
         }
@@ -90,13 +85,12 @@ exports.handler = async (event) => {
         });
         if ((ages || []).length === 0) brackets.pax065 = 1;
 
-        // Configuração de Parâmetros
         let homeVal = 0, multiVal = 0, destVal = parseInt(destination), catVal = 1;
         if (tripType == '3') { homeVal = 1; catVal = 3; }
         else if (tripType == '4') { homeVal = 22; destVal = 2; catVal = 5; }
         else if (tripType == '2') { catVal = 2; }
 
-        // --- 1. BUSCAR PLANOS (BuscarPlanosNovosV13) ---
+        // --- 1. BUSCAR PLANOS ---
         const planosParams = {
             'login': { val: CORIS_LOGIN, type: 'varchar' },
             'senha': { val: CORIS_SENHA, type: 'varchar' },
@@ -108,28 +102,28 @@ exports.handler = async (event) => {
 
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPlanosNovosV13' }, // SOAPAction pode precisar ser apenas a URL base ou vazia dependendo do ASMX, mas tempuri é padrão.
+            headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPlanosNovosV13' },
             body: createSoapEnvelope('BuscarPlanosNovosV13', planosParams)
         });
         
         const planosText = await planosRes.text();
         
-        // Verifica erros na resposta XML
+        // Verifica erros
         const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
         const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
         if (erroMatch && erroMatch[1] !== '0') {
              const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido';
              console.error("Erro CORIS:", msg);
-             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg}` }) };
+             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg} (Cód: ${erroMatch[1]})` }) };
         }
 
         let planos = parseCorisXML(planosText, 'buscaPlanos');
 
         if (planos.length === 0) {
-            return { statusCode: 400, body: JSON.stringify({ error: `Nenhum plano encontrado. Verifique se o destino (${destVal}) é atendido pela sua agência.` }) };
+            return { statusCode: 400, body: JSON.stringify({ error: `Nenhum plano encontrado para Destino ${destVal}, Dias ${days}.` }) };
         }
 
-        // --- 2. BUSCAR PREÇOS (BuscarPrecosIndividualV13) ---
+        // --- 2. BUSCAR PREÇOS ---
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': { val: CORIS_LOGIN, type: 'varchar' },
