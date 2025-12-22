@@ -17,16 +17,16 @@ const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Helper XML Idêntico ao Proxy (Com quebras de linha)
+// Helper XML SOAP + CDATA Rígido (\r\n)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar';
-        paramString += `<param name='${key}' type='${type}' value='${val}' />\n`;
+        paramString += `<param name='${key}' type='${type}' value='${val}' />\r\n`;
     }
     return `<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' xmlns:tem='http://tempuri.org/'>
 <soapenv:Header/>
 <soapenv:Body>
 <tem:${method}>
@@ -46,11 +46,13 @@ const extractTagValue = (xml, tagName) => {
     return match ? match[1] : null;
 };
 
+// Emissão Coris
 async function emitirCoris(leadData) {
     const pax1 = leadData.passengers[0];
     let dataNasc = pax1.nascimento;
     if (dataNasc.includes('/')) {
         const [d, m, y] = dataNasc.split('/');
+        // Formato ISO para segurança
         dataNasc = `${y}-${m}-${d}`; 
     }
 
@@ -110,7 +112,7 @@ async function emitirCoris(leadData) {
 
     const res = await fetch(CORIS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': `http://tempuri.org/${method}` },
+        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
         body: createSoapEnvelope(method, insereParams)
     });
 
@@ -122,6 +124,7 @@ async function emitirCoris(leadData) {
 
     const voucher = extractTagValue(text, 'voucher');
     const linkBilhete = `https://evoucher.coris.com.br/evoucher/chubb/bilhete_chubb_assistencia_v1.asp?voucher=${voucher}`;
+
     return { voucher: voucher || 'EMITIDO', link: linkBilhete, pedidoId: 'N/A' };
 }
 
