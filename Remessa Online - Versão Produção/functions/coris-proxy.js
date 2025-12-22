@@ -1,41 +1,30 @@
 const fetch = require('node-fetch');
 
-// --- CREDENCIAIS OFICIAIS ---
+// --- CREDENCIAIS ---
 const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = 'MORJ6750';
 const CORIS_SENHA = 'diego@';
 
-// Helper: Gera XML IDÊNTICO ao Postman (Com quebras de linha no CDATA)
+// Helper: Gera XML IDÊNTICO ao Postman (Com quebras de linha \r\n explícitas)
 const createSoapEnvelope = (method, params) => {
     let paramLines = '';
     
-    // Monta cada linha de parâmetro com quebra de linha \n
+    // Monta cada linha de parâmetro com quebra de linha \r\n
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
-        // Nota: Espaços exatos conforme padrão visual do Postman
-        paramLines += `<param name='${key}' type='${type}' value='${val}' />\n`;
+        // Nota: Espaços exatos conforme padrão visual do Postman: <param ... />
+        paramLines += `<param name='${key}' type='${type}' value='${val}' />\r\n`;
     }
 
-    // Estrutura SOAP com CDATA e quebras de linha
-    return `<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' xmlns:tem='http://tempuri.org/'>
-<soapenv:Header/>
-<soapenv:Body>
-<tem:${method}>
-<tem:strXML>
-<![CDATA[
-<execute>
-${paramLines}</execute>
-]]>
-</tem:strXML>
-</tem:${method}>
-</soapenv:Body>
-</soapenv:Envelope>`;
+    // Estrutura SOAP com CDATA e quebras de linha \r\n
+    // O Postman usa xmlns:soapenv e xmlns:tem
+    return `<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' xmlns:tem='http://tempuri.org/'>\r\n<soapenv:Header/>\r\n<soapenv:Body>\r\n<tem:${method}>\r\n<tem:strXML>\r\n<![CDATA[\r\n<execute>\r\n${paramLines}</execute>\r\n]]>\r\n</tem:strXML>\r\n</tem:${method}>\r\n</soapenv:Body>\r\n</soapenv:Envelope>`;
 };
 
 const parseCorisXML = (xmlString, tagName) => {
     const results = [];
+    // Regex ajustado para pegar conteúdo com quebras de linha
     const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'g');
     let match;
     while ((match = regex.exec(xmlString)) !== null) {
@@ -99,11 +88,10 @@ exports.handler = async (event) => {
             'multi': { val: multiVal, type: 'int' }
         };
 
-        console.log(`[CORIS] Request Planos: Dest=${destVal}, Dias=${days}`);
-
         const planosRes = await fetch(CORIS_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPlanosNovosV13' },
+            // Header Content-Type igual ao Postman
+            headers: { 'Content-Type': 'text/xml; charset=utf-8' },
             body: createSoapEnvelope('BuscarPlanosNovosV13', planosParams)
         });
         
@@ -142,20 +130,20 @@ exports.handler = async (event) => {
                 'mortenat': { val: 0, type: 'int' },
                 'cancplus': { val: 0, type: 'int' },
                 'cancany': { val: 0, type: 'int' },
-                'formapagamento': { val: '', type: 'varchar' },
+                'formapagamento': { val: 'FA', type: 'varchar' }, // FA no Postman
                 'destino': { val: destVal, type: 'int' },
                 'categoria': { val: catVal, type: 'int' },
-                'codigodesconto': { val: '', type: 'varchar' },
+                'codigodesconto': { val: '0', type: 'varchar' }, // 0 no Postman
                 'danosmala': { val: 0, type: 'int' },
                 'pet': { val: 0, type: 'int' },
                 'p1': { val: '0', type: 'varchar' },
-                'p2': { val: brackets.p2.toString(), type: 'varchar' },
+                'p2': { val: '0', type: 'varchar' },
                 'p3': { val: '0', type: 'varchar' } 
             };
 
             const precoRes = await fetch(CORIS_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'http://tempuri.org/BuscarPrecosIndividualV13' },
+                headers: { 'Content-Type': 'text/xml; charset=utf-8' },
                 body: createSoapEnvelope('BuscarPrecosIndividualV13', precoParams)
             });
 
