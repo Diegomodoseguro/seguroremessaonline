@@ -1,7 +1,7 @@
 const fetch = require('node-fetch'); 
 const { createClient } = require('@supabase/supabase-js');
 
-// Configurações
+// Configs
 const SUPABASE_URL = process.env.SUPABASE_URL; 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; 
 const EZSIM_USER = process.env.EZSIM_USER;
@@ -17,7 +17,7 @@ const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Helper XML SOAP + CDATA
+// Helper XML Compacto
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
@@ -25,21 +25,7 @@ const createSoapEnvelope = (method, params) => {
         const type = item.type || 'varchar';
         paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
-    return `<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
-   <soapenv:Header/>
-   <soapenv:Body>
-      <tem:${method}>
-         <tem:strXML>
-            <![CDATA[
-            <execute>
-                ${paramString}
-            </execute>
-            ]]>
-         </tem:strXML>
-      </tem:${method}>
-   </soapenv:Body>
-</soapenv:Envelope>`;
+    return `<?xml version="1.0" encoding="utf-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"><soapenv:Header/><soapenv:Body><tem:${method}><tem:strXML><![CDATA[<execute>${paramString}</execute>]]></tem:strXML></tem:${method}></soapenv:Body></soapenv:Envelope>`;
 };
 
 const extractTagValue = (xml, tagName) => {
@@ -47,57 +33,43 @@ const extractTagValue = (xml, tagName) => {
     return match ? match[1] : null;
 };
 
-// Emissão Coris - Usando InsereVoucherIndividualV13 (Conforme Postman)
+// Emissão Coris
 async function emitirCoris(leadData) {
-    // Nota: O Postman usa 'InsereVoucherIndividualV13' para emissão. 
-    // Adaptação para o fluxo de emissão baseado na compra.
-    
-    // Preparação dos dados do Primeiro Passageiro (Titular)
     const pax1 = leadData.passengers[0];
     let dataNasc = pax1.nascimento;
     if (dataNasc.includes('/')) {
         const [d, m, y] = dataNasc.split('/');
-        dataNasc = `${y}-${m}-${d}`; // Formato ISO para segurança, ou dd/mm/yyyy dependendo da API
-        // O Postman mostra formato yyyy/mm/dd ou mm/dd/yyyy. Vamos tentar manter o que vem.
-        // Melhor: yyyy/mm/dd conforme exemplo do Postman '1993-01-15' ou '1980/03/18'
-        dataNasc = `${y}/${m}/${d}`; 
+        dataNasc = `${y}-${m}-${d}`; 
     }
 
     const insereParams = {
         'login': { val: CORIS_LOGIN, type: 'varchar' },
         'senha': { val: CORIS_SENHA, type: 'varchar' },
         'idplano': { val: leadData.planId, type: 'int' },
-        'qtdpaxes': { val: leadData.passengers.length, type: 'int' }, // Quantidade total
-        'familiar': { val: 'N', type: 'char' }, // Ajustar se for plano familiar
+        'qtdpaxes': { val: leadData.passengers.length, type: 'int' },
+        'familiar': { val: 'N', type: 'char' },
         'inicioviagem': { val: leadData.dates.departure.replace(/-/g, '/'), type: 'varchar' },
         'fimviagem': { val: leadData.dates.return.replace(/-/g, '/'), type: 'varchar' },
         'destino': { val: leadData.destination, type: 'int' },
-        
-        // Dados Pax 1
         'nome': { val: pax1.nome.split(' ')[0], type: 'varchar' },
         'sobrenome': { val: pax1.nome.split(' ').slice(1).join(' '), type: 'varchar' },
         'sexo': { val: pax1.sexo || 'M', type: 'char' },
         'dtnascimento': { val: dataNasc, type: 'varchar' },
         'documento': { val: pax1.cpf.replace(/\D/g,''), type: 'varchar' },
         'tipodoc': { val: 'CPF', type: 'varchar' },
-        
         'file': { val: leadData.leadId, type: 'varchar' },
         'endereco': { val: leadData.comprador.endereco.logradouro, type: 'varchar' },
         'telefone': { val: leadData.contactPhone.replace(/\D/g,''), type: 'varchar' },
         'cidade': { val: leadData.comprador.endereco.cidade, type: 'varchar' },
         'uf': { val: leadData.comprador.endereco.uf, type: 'char' },
         'cep': { val: leadData.comprador.endereco.cep.replace(/\D/g,''), type: 'varchar' },
-        
         'contatonome': { val: leadData.contactName, type: 'varchar' },
         'contatofone': { val: leadData.contactPhone.replace(/\D/g,''), type: 'varchar' },
         'contatoendereco': { val: leadData.comprador.endereco.logradouro, type: 'varchar' },
-        
-        'formapagamento': { val: 'FA', type: 'varchar' }, // Faturado conforme exemplo Postman
+        'formapagamento': { val: 'FA', type: 'varchar' }, 
         'processo': { val: 0, type: 'int' },
         'meio': { val: 0, type: 'int' },
         'email': { val: leadData.comprador.email, type: 'varchar' },
-        
-        // Flags padrão zeradas conforme Postman
         'angola': { val: 'N', type: 'char' },
         'furtoelet': { val: 0, type: 'int' },
         'bagagens': { val: 0, type: 'int' },
@@ -107,7 +79,7 @@ async function emitirCoris(leadData) {
         'cancany': { val: 0, type: 'int' },
         'codigofree': { val: '', type: 'varchar' },
         'valorvenda': { val: '00.00', type: 'float' },
-        'categoria': { val: 1, type: 'int' }, // Default Lazer
+        'categoria': { val: 1, type: 'int' }, 
         'danosmala': { val: 0, type: 'int' },
         'dataitemviagem': { val: '', type: 'varchar' },
         'bairro': { val: leadData.comprador.endereco.bairro, type: 'varchar' },
@@ -122,13 +94,7 @@ async function emitirCoris(leadData) {
         'paisEndereco': { val: '', type: 'varchar' }
     };
 
-    // Obs: Se houver mais passageiros, o método InsereVoucherFamiliarV13 deve ser usado ou chamadas múltiplas.
-    // O Postman sugere InsereVoucherIndividualV13 para 1 pax.
-    
     const method = leadData.passengers.length > 1 ? 'InsereVoucherFamiliarV13' : 'InsereVoucherIndividualV13';
-    // Nota: Para Familiar, a estrutura de params muda (nome1, nome2...). 
-    // Para simplificar e garantir funcionamento imediato do teste com 1 pax, focamos no Individual.
-    // Em produção real, expandir lógica para mapear pax1, pax2... se method == Familiar.
 
     const res = await fetch(CORIS_URL, {
         method: 'POST',
@@ -137,17 +103,13 @@ async function emitirCoris(leadData) {
     });
 
     const text = await res.text();
-    
-    // Verifica erro
     const erro = extractTagValue(text, 'erro');
     if (erro && erro !== '0' && erro !== 'OK') {
         throw new Error(`Coris Emissão Falhou: ${extractTagValue(text, 'mensagem') || 'Erro desconhecido'}`);
     }
 
-    // Tenta extrair voucher
     const voucher = extractTagValue(text, 'voucher');
     const linkBilhete = `https://evoucher.coris.com.br/evoucher/chubb/bilhete_chubb_assistencia_v1.asp?voucher=${voucher}`;
-
     return { voucher: voucher || 'EMITIDO', link: linkBilhete, pedidoId: 'N/A' };
 }
 
