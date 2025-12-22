@@ -22,7 +22,7 @@ const createSoapEnvelope = (method, params) => {
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
-        // Importante: Sem espaços entre atributos
+        // Importante: Sem espaços entre atributos, conforme padrão
         paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
 
@@ -90,15 +90,23 @@ exports.handler = async (event) => {
         });
         if ((ages || []).length === 0) brackets.pax065 = 1;
 
-        let homeVal = 0, multiVal = 0, destVal = parseInt(destination), catVal = 1;
-        let searchDays = days; 
+        let homeVal = 0;
+        let multiVal = 0;
+        let destVal = parseInt(destination);
+        let catVal = 1; // Default: Lazer (1)
+        let searchDays = parseInt(days); // Garante inteiro
 
-        // Lógica de Tipo de Viagem
+        // Lógica de Tipo de Viagem (Conforme Manual V5)
         if (tripType == '3') { // Multiviagem (Anual)
-            homeVal = 1; catVal = 3; searchDays = 365; multiVal = 30; 
+            homeVal = 1; 
+            catVal = 3; 
+            searchDays = 365; // Fixo para anual
+            multiVal = 30;    // Padrão de mercado para multi
         }
         else if (tripType == '4') { // Receptivo
-            homeVal = 22; destVal = 2; catVal = 5; 
+            homeVal = 22; 
+            destVal = 2; // Força destino Brasil conforme manual
+            catVal = 5; 
         }
         else if (tripType == '2') { // Intercâmbio
             catVal = 2; 
@@ -124,7 +132,7 @@ exports.handler = async (event) => {
         
         let planosText = await planosRes.text();
         
-        // --- CRÍTICO: Decodificar entidades HTML pois a resposta vem "escapada" ---
+        // Decodificar entidades HTML pois a resposta vem "escapada"
         planosText = decodeHtmlEntities(planosText);
         
         // Verifica erro de negócio da API
@@ -139,23 +147,26 @@ exports.handler = async (event) => {
         let planos = parseCorisXML(planosText, 'buscaPlanos');
 
         if (planos.length === 0) {
-            console.error("Nenhum plano encontrado. XML Parcial:", planosText.substring(0, 200));
+            const debugInfo = `Destino=${destVal}, Dias=${searchDays}, Home=${homeVal}, Multi=${multiVal}, Cat=${catVal}`;
+            console.error(`Nenhum plano encontrado. Params: ${debugInfo}`);
+            
             return { 
                 statusCode: 400, 
                 headers, 
                 body: JSON.stringify({ 
-                    error: `Nenhum plano disponível para o destino ${destVal} (${tripType == 3 ? 'Multiviagem' : 'Lazer'}) com ${searchDays} dias. Verifique se a agência possui produtos ativos para este perfil.` 
+                    error: `Nenhum plano disponível na Coris para este perfil. Parâmetros técnicos enviados: ${debugInfo}. Verifique se o login ${CORIS_LOGIN} possui produtos ativos para estes parâmetros.` 
                 }) 
             };
         }
 
         // 3. Buscar Preços (BuscarPrecosIndividualV13)
+        // SEGUINDO ESTRUTURA EXATA DO POSTMAN COLLECTION "BuscarPrecosIndividualV13"
         const plansWithPrice = await Promise.all(planos.map(async (p) => {
             const precoParams = {
                 'login': { val: CORIS_LOGIN, type: 'varchar' },
                 'senha': { val: CORIS_SENHA, type: 'varchar' },
                 'idplano': { val: p.id, type: 'int' },
-                'dias': { val: days, type: 'int' },
+                'dias': { val: parseInt(days), type: 'int' },
                 'pax065': { val: brackets.pax065, type: 'int' },
                 'pax6675': { val: 0, type: 'int' },
                 'pax7685': { val: brackets.pax7685, type: 'int' }, 
@@ -167,14 +178,17 @@ exports.handler = async (event) => {
                 'mortenat': { val: 0, type: 'int' },
                 'cancplus': { val: 0, type: 'int' },
                 'cancany': { val: 0, type: 'int' },
-                'formapagamento': { val: '', type: 'varchar' },
+                // SEGUINDO POSTMAN: formapagamento='FA' (anteriormente estava vazio)
+                'formapagamento': { val: 'FA', type: 'varchar' }, 
                 'destino': { val: destVal, type: 'int' },
                 'categoria': { val: catVal, type: 'int' },
-                'codigodesconto': { val: '', type: 'varchar' },
+                // SEGUINDO POSTMAN: codigodesconto='0' (anteriormente estava vazio)
+                'codigodesconto': { val: '0', type: 'varchar' },
                 'danosmala': { val: 0, type: 'int' },
                 'pet': { val: 0, type: 'int' },
+                // SEGUINDO POSTMAN: p1, p2, p3 = '0' (anteriormente p2 estava vazio)
                 'p1': { val: '0', type: 'varchar' },
-                'p2': { val: brackets.p2.toString(), type: 'varchar' },
+                'p2': { val: brackets.p2 > 0 ? brackets.p2.toString() : '0', type: 'varchar' },
                 'p3': { val: '0', type: 'varchar' } 
             };
 
@@ -185,7 +199,7 @@ exports.handler = async (event) => {
             });
 
             let precoText = await precoRes.text();
-            precoText = decodeHtmlEntities(precoText); // Decodificar também a resposta de preços
+            precoText = decodeHtmlEntities(precoText); 
 
             const precoData = parseCorisXML(precoText, 'buscaPrecos')[0];
 
