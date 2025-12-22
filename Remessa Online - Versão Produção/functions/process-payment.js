@@ -17,7 +17,7 @@ const TARGET_PLAN_NAME = 'eSIM, 2GB, 15 Days, Global, V2';
 if (!SUPABASE_URL || !SUPABASE_KEY) console.error("ERRO: Variáveis Supabase ausentes.");
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Helper XML Compacto
+// Helper XML Compacto (SEM DECLARAÇÃO XML <?xml ... ?> PARA IGUALAR AO POSTMAN)
 const createSoapEnvelope = (method, params) => {
     let paramString = '';
     for (const [key, item] of Object.entries(params)) {
@@ -25,7 +25,7 @@ const createSoapEnvelope = (method, params) => {
         const type = item.type || 'varchar';
         paramString += `<param name='${key}' type='${type}' value='${val}' />`;
     }
-    return `<?xml version="1.0" encoding="utf-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"><soapenv:Header/><soapenv:Body><tem:${method}><tem:strXML><![CDATA[<execute>${paramString}</execute>]]></tem:strXML></tem:${method}></soapenv:Body></soapenv:Envelope>`;
+    return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/"><soapenv:Header/><soapenv:Body><tem:${method}><tem:strXML><![CDATA[<execute>${paramString}</execute>]]></tem:strXML></tem:${method}></soapenv:Body></soapenv:Envelope>`;
 };
 
 const extractTagValue = (xml, tagName) => {
@@ -39,10 +39,9 @@ async function emitirCoris(leadData) {
     let dataNasc = pax1.nascimento;
     if (dataNasc.includes('/')) {
         const [d, m, y] = dataNasc.split('/');
-        dataNasc = `${y}-${m}-${d}`; // Formato YYYY-MM-DD para o XML
+        dataNasc = `${y}-${m}-${d}`; 
     }
 
-    // Parâmetros alinhados EXATAMENTE com a Collection do Postman 'InsereVoucherIndividualV13'
     const insereParams = {
         'login': { val: CORIS_LOGIN, type: 'varchar' },
         'senha': { val: CORIS_SENHA, type: 'varchar' },
@@ -67,7 +66,6 @@ async function emitirCoris(leadData) {
         'contatonome': { val: leadData.contactName, type: 'varchar' },
         'contatofone': { val: leadData.contactPhone.replace(/\D/g,''), type: 'varchar' },
         'contatoendereco': { val: leadData.comprador.endereco.logradouro, type: 'varchar' },
-        // SEGUINDO POSTMAN: Valor 'FA'
         'formapagamento': { val: 'FA', type: 'varchar' }, 
         'processo': { val: 0, type: 'int' },
         'meio': { val: 0, type: 'int' },
@@ -83,18 +81,15 @@ async function emitirCoris(leadData) {
         'valorvenda': { val: '00.00', type: 'float' },
         'categoria': { val: 1, type: 'int' }, 
         'danosmala': { val: 0, type: 'int' },
-        'dataitemviagem': { val: '', type: 'varchar' }, // Mantido sem espaço extra, pois é padrão
+        'dataitemviagem': { val: '', type: 'varchar' },
         'bairro': { val: leadData.comprador.endereco.bairro, type: 'varchar' },
         'numero': { val: leadData.comprador.endereco.numero, type: 'varchar' },
         'endcomplemento': { val: '', type: 'varchar' },
-        // SEGUINDO POSTMAN: Valor '0'
         'vouchercredito': { val: '0', type: 'varchar' },
         'pet': { val: 0, type: 'int' },
-        // SEGUINDO POSTMAN: Valores '0'
         'p1': { val: '0', type: 'varchar' },
         'p2': { val: '0', type: 'varchar' },
         'p3': { val: '0', type: 'varchar' }
-        // REMOVIDO: pais_origem_passaporte e paisEndereco (Não constam na collection InsereVoucherIndividualV13)
     };
 
     const method = leadData.passengers.length > 1 ? 'InsereVoucherFamiliarV13' : 'InsereVoucherIndividualV13';
