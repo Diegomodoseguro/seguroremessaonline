@@ -5,19 +5,32 @@ const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = 'MORJ6750';
 const CORIS_SENHA = 'diego@';
 
-// Helper: Gera XML IDÊNTICO ao Postman
+// Helper: Gera XML IDÊNTICO ao formato solicitado
 const createSoapEnvelope = (method, params) => {
     let paramLines = '';
     
-    // Monta cada linha de parâmetro com a estrutura exata: <param name='...' type='...' value='...' />
+    // Monta cada linha de parâmetro mantendo a estrutura interna com aspas simples
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
         const type = item.type || 'varchar'; 
-        paramLines += `<param name='${key}' type='${type}' value='${val}' />\r\n`;
+        // Adiciona indentação para ficar visualmente igual ao exemplo
+        paramLines += `               <param name='${key}' type='${type}' value='${val}' />\n`;
     }
 
-    // Estrutura SOAP exata do Postman (Raw body)
-    return `<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' xmlns:tem='http://tempuri.org/'>\r\n<soapenv:Header/>\r\n<soapenv:Body>\r\n<tem:${method}>\r\n<tem:strXML>\r\n<![CDATA[\r\n<execute>\r\n${paramLines}</execute>\r\n]]>\r\n</tem:strXML>\r\n</tem:${method}>\r\n</soapenv:Body>\r\n</soapenv:Envelope>`;
+    // Estrutura SOAP ajustada com aspas duplas no Envelope e indentação
+    return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <tem:${method}>
+         <tem:strXML>
+            <![CDATA[
+            <execute>
+${paramLines}            </execute>
+            ]]>
+         </tem:strXML>
+      </tem:${method}>
+   </soapenv:Body>
+</soapenv:Envelope>`;
 };
 
 const parseCorisXML = (xmlString, tagName) => {
