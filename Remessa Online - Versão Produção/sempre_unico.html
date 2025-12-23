@@ -254,7 +254,7 @@
         </section>
     </main>
     
-    <!-- Footer Completo (Como Solicitado) -->
+    <!-- Footer Completo -->
     <footer class="bg-[#292929] text-gray-400 text-sm pt-12 pb-8 border-t border-gray-800">
         <div class="bg-[#2244FF] py-8 px-4 -mt-12 mb-12">
             <div class="container mx-auto max-w-7xl flex flex-col md:flex-row justify-between items-center gap-6">
@@ -295,7 +295,7 @@
     </footer>
     
     <!-- Botão Flutuante WhatsApp Oficial -->
-    <a href="https://wa.me/5511996325612" target="_blank" class="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#128C7E] text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center group border-2 border-white">
+    <a href="https://wa.me/5511996325612" target="_blank" class="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#20bd5a] text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center group border-2 border-white">
         <!-- Ícone Oficial do WhatsApp -->
         <svg viewBox="0 0 24 24" class="w-8 h-8 fill-current" xmlns="http://www.w3.org/2000/svg">
             <path d="M17.472 14.382c-.297-.149-1.758-8.675-2.03-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414zM12 0C5.373 0 0 5.373 0 12c0 2.125.55 4.176 1.587 5.946L.057 24l6.305-1.654C8.049 23.5 10.01 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/>
@@ -434,6 +434,7 @@
                     // 2. Busca Planos via Proxy (API Coris)
                     const response = await fetch('/.netlify/functions/coris-proxy', {
                         method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, // HEADER CORRIGIDO
                         body: JSON.stringify({ 
                             destination: currentQuoteData.destValue, 
                             days: days, 
