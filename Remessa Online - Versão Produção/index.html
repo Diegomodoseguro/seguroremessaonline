@@ -34,6 +34,11 @@
         .flatpickr-input[readonly] { background-color: var(--color-bg-light); cursor: pointer; }
         .plan-card { border: 1px solid var(--color-border); border-radius: 12px; transition: all 0.2s; background: white; }
         .plan-card:hover { border-color: var(--color-remessa-main); box-shadow: 0 4px 18px rgba(0,0,0,0.08); }
+        .loader { border: 3px solid #e0e0e0; border-top: 3px solid var(--color-remessa-main); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .modal { transition: opacity 0.3s; }
+        .animate-on-scroll { opacity: 0; transform: translateY(20px); transition: 0.6s; }
+        .animate-on-scroll.is-visible { opacity: 1; transform: translateY(0); }
         .horizontal-section { background-color: var(--color-remessa-main); color: white; padding: 80px 0; }
         .StripeElement { background: white; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; }
         .checkout-grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 14px; }
@@ -126,6 +131,7 @@
                         </div>
                         <p id="trip-duration" class="text-sm text-center text-gray-600 font-medium hidden bg-blue-50 py-3 rounded-lg border border-blue-100">Duração: <span id="duration-days" class="font-bold text-blue-600">0</span> dias</p>
                         
+                        <!-- Passageiros Dinâmicos -->
                         <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
                             <div class="flex justify-between items-center mb-4">
                                 <label class="block text-sm font-semibold text-gray-700">Passageiros</label>
@@ -153,6 +159,32 @@
             </div>
         </section>
 
+        <!-- Benefícios -->
+        <section id="beneficios" class="py-20 bg-white text-center">
+            <div class="container mx-auto px-4 max-w-6xl">
+                <h2 class="text-3xl md:text-4xl font-bold text-[#000733] mb-12 animate-on-scroll">Por que escolher a Coris?</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                     <div class="benefit-card animate-on-scroll group">
+                        <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-4 text-[#2244FF]"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></div>
+                        <h3 class="text-lg font-bold mb-2 text-[#000733]">Cobertura Completa</h3><p class="text-sm text-gray-500">Despesas médicas, hospitalares e odontológicas.</p>
+                    </div>
+                     <div class="benefit-card animate-on-scroll group">
+                       <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-4 text-[#2244FF]"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></div>
+                        <h3 class="text-lg font-bold mb-2 text-[#000733]">Atendimento 24h</h3><p class="text-sm text-gray-500">Central própria com atendimento em português.</p>
+                    </div>
+                     <div class="benefit-card animate-on-scroll group">
+                        <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-4 text-[#2244FF]"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
+                        <h3 class="text-lg font-bold mb-2 text-[#000733]">15% OFF Real</h3><p class="text-sm text-gray-500">Desconto exclusivo para clientes Remessa Online.</p>
+                    </div>
+                     <div class="benefit-card animate-on-scroll group">
+                         <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-4 text-[#2244FF]"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.404 12.196a9.75 9.75 0 0113.192 0M2.52 9.354a14.25 14.25 0 0118.96 0M12 18.75a.75.75 0 100-1.5.75.75 0 000 1.5z" /></svg></div>
+                        <h3 class="text-lg font-bold mb-2 text-[#000733]">+2GB Internet</h3><p class="text-sm text-gray-500">Chip eSIM internacional grátis para sua viagem.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
         <section id="faq" class="py-20 bg-gray-50 border-t border-gray-200">
             <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-16">
@@ -180,6 +212,10 @@
                                 <h4 class="font-bold text-gray-800 text-sm">O desconto de 15% é aplicado sobre qual valor?</h4>
                                 <p class="text-sm text-gray-600 mt-1">Sobre o valor total do seguro.</p>
                             </div>
+                            <div class="bg-white p-5 rounded-lg border border-gray-200">
+                                <h4 class="font-bold text-gray-800 text-sm">Como funciona o eSIM grátis?</h4>
+                                <p class="text-sm text-gray-600 mt-1">É um chip virtual. Você escaneia um QR Code e ativa a internet.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -194,6 +230,7 @@
     
     <!-- Botão Flutuante WhatsApp Oficial -->
     <a href="https://wa.me/5511996325612" target="_blank" class="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#128C7E] text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center group border-2 border-white">
+        <!-- Ícone Oficial do WhatsApp -->
         <svg viewBox="0 0 24 24" class="w-8 h-8 fill-current" xmlns="http://www.w3.org/2000/svg">
             <path d="M17.472 14.382c-.297-.149-1.758-8.675-2.03-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414zM12 0C5.373 0 0 5.373 0 12c0 2.125.55 4.176 1.587 5.946L.057 24l6.305-1.654C8.049 23.5 10.01 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/>
         </svg>
@@ -247,11 +284,10 @@
     <script>
         const STRIPE_KEY = 'pk_live_51S0mcpFWoZCz7UUNSC4AQ34VHLEqOAmy0j84mMhhDfn0uILIYabgbxkCWZiaE70OLLhrRYdAHcFbNIaJScjlpvZB006GCqwN3x';
         
-        // Inicialização Segura do Supabase
         let supabaseClient;
         try {
             if (typeof supabase === 'undefined' && typeof window.supabase === 'undefined') {
-                console.error("ERRO CRÍTICO: A biblioteca Supabase não carregou. Verifique sua conexão ou bloqueadores de anúncio.");
+                console.error("ERRO CRÍTICO: A biblioteca Supabase não carregou.");
                 alert("Erro de conexão: O sistema de segurança não pôde ser carregado. Por favor, recarregue a página.");
             } else {
                 const sb = window.supabase || supabase;
@@ -279,7 +315,6 @@
             const fpDeparture = flatpickr("#departure-date", { ...dateConfig, onChange: (d) => fpReturn.set('minDate', d[0]) });
             const fpReturn = flatpickr("#return-date", { ...dateConfig, onChange: () => updateDuration() });
             
-            // Inicializa 1 input de idade
             updateAgeInputs();
 
             function updateDuration() {
@@ -343,6 +378,7 @@
 
                     const response = await fetch('/.netlify/functions/coris-proxy', {
                         method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, // Header corrigido para JSON
                         body: JSON.stringify({ 
                             destination: currentQuoteData.destValue, 
                             days: days, 
@@ -365,7 +401,7 @@
                         container.innerHTML = '<p class="text-center col-span-3 text-gray-500">Nenhum plano disponível para os filtros selecionados.</p>';
                     } else {
                         fetchedPlans.forEach(plan => {
-                            const finalPrice = plan.originalPriceTotalBRL * 0.85; // 15% OFF
+                            const finalPrice = plan.originalPriceTotalBRL * 0.85; 
                             container.innerHTML += `
                                 <div class="plan-card p-6 flex flex-col justify-between animate-on-scroll is-visible rounded-xl border border-gray-200 shadow-md hover:shadow-xl transition-shadow">
                                     <div>
@@ -416,6 +452,7 @@
                 document.getElementById('checkout-dates').textContent = `${currentQuoteData.dateStartDisplay} a ${currentQuoteData.dateEndDisplay}`;
                 document.getElementById('checkout-dmh').textContent = plan.dmh;
                 
+                // Elemento opcional Bagagem
                 const bagElem = document.getElementById('checkout-bagagem');
                 if(bagElem) bagElem.textContent = plan.bagagem;
 
@@ -473,6 +510,7 @@
 
                     const response = await fetch('/.netlify/functions/process-payment', {
                         method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, // Header corrigido para JSON
                         body: JSON.stringify({
                             leadId: currentQuoteData.leadId,
                             paymentMethodId: paymentMethod.id,
@@ -483,6 +521,7 @@
                             planName: document.getElementById('checkout-plan-name').textContent,
                             passengers: passengersList,
                             dates: currentQuoteData.dates,
+                            contactPhone: document.getElementById('contact-name').value, 
                             comprador: { 
                                 nome: passengersList[0].nome, email: currentQuoteData.email, cpf: passengersList[0].cpf,
                                 endereco: { 
@@ -494,7 +533,10 @@
                         })
                     });
 
-                    if(!response.ok) throw new Error("Erro no pagamento.");
+                    if(!response.ok) {
+                         const err = await response.json();
+                         throw new Error(err.error || "Erro no pagamento.");
+                    }
                     
                     document.getElementById('checkout-modal').click();
                     alert("Pagamento Aprovado! Apólice emitida com sucesso.");
@@ -509,7 +551,10 @@
                 }
             });
 
-            if(typeof IMask !== 'undefined') IMask(document.getElementById('cep'), {mask: '00000-000'});
+            if(typeof IMask !== 'undefined') {
+                try { IMask(document.getElementById('cep'), {mask: '00000-000'}); } catch(e){}
+            }
+            
             document.getElementById('cep').addEventListener('input', async (e) => {
                 if(e.target.value.replace(/\D/g,'').length === 8) {
                     try {
