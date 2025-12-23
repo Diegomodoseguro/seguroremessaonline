@@ -5,181 +5,133 @@ const CORIS_URL = 'https://ws.coris.com.br/webservice2/service.asmx';
 const CORIS_LOGIN = 'MORJ6750';
 const CORIS_SENHA = 'diego@';
 
-// Helper: Gera XML IDÊNTICO ao Postman (Com quebras de linha \r\n explícitas)
+// Helper: Cria o Envelope SOAP EXATO (Padrão Postman Validado)
 const createSoapEnvelope = (method, params) => {
-    let paramLines = '';
-    
-    // Monta cada linha de parâmetro com quebra de linha \r\n
+    let paramString = '';
     for (const [key, item] of Object.entries(params)) {
         const val = (item.val === null || item.val === undefined) ? '' : String(item.val);
-        const type = item.type || 'varchar'; 
-        // Nota: Espaços exatos conforme padrão visual do Postman: <param ... />
-        paramLines += `<param name='${key}' type='${type}' value='${val}' />\r\n`;
+        const type = item.type || 'varchar';
+        paramString += `<param name="${key}" type="${type}" value="${val}" />`;
     }
 
-    // Estrutura SOAP com CDATA e quebras de linha \r\n
-    // O Postman usa xmlns:soapenv e xmlns:tem
-    return `<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' xmlns:tem='http://tempuri.org/'>\r\n<soapenv:Header/>\r\n<soapenv:Body>\r\n<tem:${method}>\r\n<tem:strXML>\r\n<![CDATA[\r\n<execute>\r\n${paramLines}</execute>\r\n]]>\r\n</tem:strXML>\r\n</tem:${method}>\r\n</soapenv:Body>\r\n</soapenv:Envelope>`;
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <${method} xmlns="http://tempuri.org/">
+      <strXML><![CDATA[<execute>${paramString}</execute>]]></strXML>
+    </${method}>
+  </soap:Body>
+</soap:Envelope>`;
 };
 
-const parseCorisXML = (xmlString, tagName) => {
-    const results = [];
-    // Regex ajustado para pegar conteúdo com quebras de linha
-    const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'g');
-    let match;
-    while ((match = regex.exec(xmlString)) !== null) {
-        const content = match[1];
-        const item = {};
-        const fieldRegex = /<(\w+)>([^<]*)<\/\1>/g;
-        let fieldMatch;
-        while ((fieldMatch = fieldRegex.exec(content)) !== null) {
-            item[fieldMatch[1]] = fieldMatch[2];
-        }
-        results.push(item);
-    }
-    return results;
-};
-
-const extractCoverageValue = (planName) => {
-    if (!planName) return 0;
-    let match = planName.match(/(\d{1,3})[.,]?(\d{3})?(\s*k|\s*mil)?/i);
-    if (match) {
-        let val = parseInt(match[1].replace(/[.,]/g, ''));
-        if (match[3] || (!match[2] && val < 1000)) val = val * 1000;
-        else if (match[2]) val = parseInt(match[1] + match[2]);
-        return val;
-    }
-    return 0;
+const extractTagValue = (xml, tagName) => {
+    const match = xml.match(new RegExp(`<${tagName}>(.*?)</${tagName}>`));
+    return match ? match[1] : null;
 };
 
 exports.handler = async (event) => {
-    if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
+    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
 
     try {
-        const { destination, days, ages, tripType } = JSON.parse(event.body); 
-
-        // Validação
-        if (!destination || !days) return { statusCode: 400, body: JSON.stringify({ error: 'Dados incompletos.' }) };
-
-        const brackets = { pax065: 0, pax7685: 0, pax86100: 0, p2: 0 };
-        (ages || []).forEach(ageStr => {
-            const age = parseInt(ageStr);
-            if (age <= 65) brackets.pax065++;
-            else if (age <= 70) brackets.pax7685++;
-            else if (age <= 80) brackets.pax86100++;
-            else if (age <= 85) brackets.p2++;
-        });
-        if ((ages || []).length === 0) brackets.pax065 = 1;
-
-        let homeVal = 0, multiVal = 0, destVal = parseInt(destination), catVal = 1;
+        const body = JSON.parse(event.body);
         
-        // Regras de Negócio Coris
-        if (tripType == '3') { homeVal = 1; catVal = 3; } // Multiviagem
-        else if (tripType == '4') { homeVal = 22; destVal = 2; catVal = 5; } // Receptivo
-        else if (tripType == '2') { catVal = 2; } // Intercambio
-
-        // 1. BUSCAR PLANOS
-        const planosParams = {
+        // Determina se é familiar ou individual
+        const isFamiliar = body.passengers.length > 1;
+        const method = isFamiliar ? 'InsereVoucherFamiliarV13' : 'InsereVoucherIndividualV13';
+        
+        // Parâmetros Base (Comuns)
+        const params = {
             'login': { val: CORIS_LOGIN, type: 'varchar' },
             'senha': { val: CORIS_SENHA, type: 'varchar' },
-            'destino': { val: destVal, type: 'int' },
-            'vigencia': { val: days, type: 'int' },
-            'home': { val: homeVal, type: 'int' },
-            'multi': { val: multiVal, type: 'int' }
+            'idplano': { val: body.planId, type: 'int' },
+            'qtdpaxes': { val: body.passengers.length, type: 'int' },
+            'familiar': { val: 'N', type: 'char' },
+            // Datas formatadas YYYY/MM/DD
+            'inicioviagem': { val: body.dates.departure.replace(/-/g, '/'), type: 'varchar' },
+            'fimviagem': { val: body.dates.return.replace(/-/g, '/'), type: 'varchar' },
+            'destino': { val: body.destination, type: 'int' },
+            'formapagamento': { val: 'FA', type: 'varchar' },
+            'email': { val: body.comprador.email, type: 'varchar' },
+            // Campos obrigatórios fixos
+            'processo': { val: 0, type: 'int' }, 'meio': { val: 0, type: 'int' }, 'angola': { val: 'N', type: 'char' },
+            'furtoelet': { val: 0, type: 'int' }, 'bagagens': { val: 0, type: 'int' }, 'morteac': { val: 0, type: 'int' },
+            'mortenat': { val: 0, type: 'int' }, 'cancplus': { val: 0, type: 'int' }, 'cancany': { val: 0, type: 'int' },
+            'codigofree': { val: '', type: 'varchar' }, 'valorvenda': { val: '00.00', type: 'float' },
+            'categoria': { val: 1, type: 'int' }, 'danosmala': { val: 0, type: 'int' }, 'pet': { val: 0, type: 'int' },
+            'p1': { val: '0', type: 'varchar' }, 'p2': { val: '0', type: 'varchar' }, 'p3': { val: '0', type: 'varchar' },
+            // Dados Comprador/Contato
+            'contatonome': { val: body.comprador.nome, type: 'varchar' },
+            'contatofone': { val: '11999999999', type: 'varchar' }, // Pode vir do front se disponível
+            'contatoendereco': { val: body.comprador.endereco.logradouro, type: 'varchar' }
         };
 
-        const planosRes = await fetch(CORIS_URL, {
-            method: 'POST',
-            // Header Content-Type igual ao Postman
-            headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-            body: createSoapEnvelope('BuscarPlanosNovosV13', planosParams)
-        });
-        
-        const planosText = await planosRes.text();
-        
-        // Diagnóstico de Erro da API
-        const erroMatch = planosText.match(/<erro>(.*?)<\/erro>/);
-        const msgMatch = planosText.match(/<mensagem>(.*?)<\/mensagem>/);
-        if (erroMatch && erroMatch[1] !== '0') {
-             const msg = msgMatch ? msgMatch[1] : 'Erro desconhecido';
-             console.error("Erro CORIS:", msg);
-             return { statusCode: 400, body: JSON.stringify({ error: `Coris: ${msg}` }) };
-        }
+        // Preenche Passageiros
+        body.passengers.forEach((pax, index) => {
+            const suffix = isFamiliar ? (index + 1) : ''; // Se familiar: nome1, nome2... Se individual: nome
+            
+            // Dados Pessoais
+            const nameParts = pax.nome.trim().split(' ');
+            const firstName = nameParts[0];
+            const lastName = nameParts.slice(1).join(' ') || '.';
 
-        let planos = parseCorisXML(planosText, 'buscaPlanos');
-
-        if (planos.length === 0) {
-            return { statusCode: 400, body: JSON.stringify({ error: `Nenhum plano disponível. Verifique se o destino (${destVal}) e dias (${days}) são válidos para sua agência.` }) };
-        }
-
-        // 2. BUSCAR PREÇOS
-        const plansWithPrice = await Promise.all(planos.map(async (p) => {
-            const precoParams = {
-                'login': { val: CORIS_LOGIN, type: 'varchar' },
-                'senha': { val: CORIS_SENHA, type: 'varchar' },
-                'idplano': { val: p.id, type: 'int' },
-                'dias': { val: days, type: 'int' },
-                'pax065': { val: brackets.pax065, type: 'int' },
-                'pax6675': { val: 0, type: 'int' },
-                'pax7685': { val: brackets.pax7685, type: 'int' }, 
-                'pax86100': { val: brackets.pax86100, type: 'int' },
-                'angola': { val: 'N', type: 'char' },
-                'furtoelet': { val: 0, type: 'int' },
-                'bagagens': { val: 0, type: 'int' },
-                'morteac': { val: 0, type: 'int' },
-                'mortenat': { val: 0, type: 'int' },
-                'cancplus': { val: 0, type: 'int' },
-                'cancany': { val: 0, type: 'int' },
-                'formapagamento': { val: 'FA', type: 'varchar' }, // FA no Postman
-                'destino': { val: destVal, type: 'int' },
-                'categoria': { val: catVal, type: 'int' },
-                'codigodesconto': { val: '0', type: 'varchar' }, // 0 no Postman
-                'danosmala': { val: 0, type: 'int' },
-                'pet': { val: 0, type: 'int' },
-                'p1': { val: '0', type: 'varchar' },
-                'p2': { val: '0', type: 'varchar' },
-                'p3': { val: '0', type: 'varchar' } 
-            };
-
-            const precoRes = await fetch(CORIS_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-                body: createSoapEnvelope('BuscarPrecosIndividualV13', precoParams)
-            });
-
-            const precoText = await precoRes.text();
-            const precoData = parseCorisXML(precoText, 'buscaPrecos')[0];
-
-            if (precoData && (precoData.precoindividualrs || precoData.totalrs)) {
-                let rawPrice = precoData.totalrs ? precoData.totalrs : precoData.precoindividualrs;
-                const totalBRL = parseFloat(rawPrice.replace(/\./g, '').replace(',', '.'));
-                
-                const coverage = extractCoverageValue(p.nome);
-                const dmh = coverage > 0 ? `USD ${coverage.toLocaleString('pt-BR')}` : p.nome;
-                
-                let bagagem = 'USD 1.000';
-                if(coverage >= 60000) bagagem = 'USD 1.500';
-                if(coverage >= 100000) bagagem = 'USD 2.000';
-
-                return {
-                    id: p.id,
-                    nome: p.nome,
-                    dmh: dmh,
-                    bagagem: bagagem,
-                    originalPriceTotalBRL: totalBRL,
-                    tripTypeId: tripType
-                };
+            params[`nome${suffix}`] = { val: firstName, type: 'varchar' };
+            params[`sobrenome${suffix}`] = { val: lastName, type: 'varchar' };
+            params[`sexo${suffix}`] = { val: 'M', type: 'char' }; // Padrão se não vier
+            params[`dtnascimento${suffix}`] = { val: pax.nascimento.replace(/-/g, '/'), type: 'varchar' };
+            params[`documento${suffix}`] = { val: pax.cpf.replace(/\D/g,''), type: 'varchar' };
+            params[`tipodoc${suffix}`] = { val: 'CPF', type: 'varchar' };
+            
+            // Dados de Endereço (Usa o do comprador para todos)
+            // No método individual (index 0 e !isFamiliar), ou no método familiar para cada pax
+            if (isFamiliar || index === 0) {
+                 params[`endereco${suffix}`] = { val: body.comprador.endereco.logradouro, type: 'varchar' };
+                 params[`telefone${suffix}`] = { val: '11999999999', type: 'varchar' };
+                 params[`cidade${suffix}`] = { val: 'São Paulo', type: 'varchar' };
+                 params[`uf${suffix}`] = { val: 'SP', type: 'char' };
+                 params[`cep${suffix}`] = { val: body.comprador.endereco.cep.replace(/\D/g,''), type: 'varchar' };
+                 params[`bairro${suffix}`] = { val: 'Centro', type: 'varchar' };
+                 params[`numero${suffix}`] = { val: body.comprador.endereco.numero || '0', type: 'varchar' };
+                 params[`endcomplemento${suffix}`] = { val: '', type: 'varchar' };
+                 
+                 if(isFamiliar) {
+                     params[`voucherCreditoPax${suffix}`] = { val: '', type: 'varchar' };
+                 } else {
+                     params['vouchercredito'] = { val: '0', type: 'varchar' };
+                     params['dataitemviagem'] = { val: '', type: 'varchar' };
+                     params['file'] = { val: 'site', type: 'varchar' };
+                 }
             }
-            return null;
-        }));
+        });
 
-        const validPlans = plansWithPrice.filter(p => p !== null).sort((a, b) => a.originalPriceTotalBRL - b.originalPriceTotalBRL);
+        // Gera Envelope
+        const xmlBody = createSoapEnvelope(method, params);
+
+        // Envia para Coris
+        const response = await fetch(CORIS_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'text/xml; charset=utf-8', 
+                'SOAPAction': `http://tempuri.org/${method}` 
+            },
+            body: xmlBody
+        });
+
+        const textResponse = await response.text();
         
-        if (validPlans.length === 0) return { statusCode: 400, body: JSON.stringify({ error: 'Erro ao calcular preços dos planos.' }) };
+        // Verifica Erros
+        const erro = extractTagValue(textResponse, 'erro');
+        if (erro && erro !== '0' && erro !== 'OK') {
+            const msg = extractTagValue(textResponse, 'mensagem') || 'Erro desconhecido';
+            throw new Error(`Falha na emissão (${erro}): ${msg}`);
+        }
 
-        return { statusCode: 200, body: JSON.stringify(validPlans) };
+        const voucher = extractTagValue(textResponse, 'voucher');
+        const link = `https://evoucher.coris.com.br/evoucher/chubb/bilhete_chubb_assistencia_v1.asp?voucher=${voucher}`;
+
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true, voucher, link }) };
 
     } catch (error) {
-        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
     }
 };
